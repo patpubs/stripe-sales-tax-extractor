@@ -1,7 +1,11 @@
-function required(name: string): string {
-  const value = process.env[name];
-  if (!value) throw new Error(`Missing environment variable ${name}`);
-  return value;
+// Each setting accepts more than one name so the Supabase <-> Vercel
+// integration's synced variables work without renaming.
+function required(...names: string[]): string {
+  for (const name of names) {
+    const value = process.env[name];
+    if (value) return value;
+  }
+  throw new Error(`Missing environment variable ${names[0]}`);
 }
 
 export const env = {
@@ -9,10 +13,10 @@ export const env = {
     return required("NEXT_PUBLIC_SUPABASE_URL");
   },
   get supabaseAnonKey() {
-    return required("NEXT_PUBLIC_SUPABASE_ANON_KEY");
+    return required("NEXT_PUBLIC_SUPABASE_ANON_KEY", "NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY");
   },
   get supabaseServiceRoleKey() {
-    return required("SUPABASE_SERVICE_ROLE_KEY");
+    return required("SUPABASE_SERVICE_ROLE_KEY", "SUPABASE_SECRET_KEY");
   },
   get encryptionKey() {
     return required("STRIPE_KEY_ENCRYPTION_KEY");
