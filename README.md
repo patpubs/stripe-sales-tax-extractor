@@ -51,8 +51,8 @@ after 8 errors and can be resumed from where it stopped.
    "Allow new users to sign up".
 2. **Vercel**: import this repo and set the variables from `.env.example`:
    - `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`
-   - `STRIPE_KEY_ENCRYPTION_KEY`: `openssl rand -base64 32`
-   - `CRON_SECRET`: `openssl rand -hex 32`
+   - `STRIPE_KEY_ENCRYPTION_KEY`: any random string of 32+ characters (or `openssl rand -base64 32`)
+   - `CRON_SECRET`: another random string of 32+ characters
    - `SUPER_ADMIN_EMAIL`: the only email allowed to create the first account
    - `NEXT_PUBLIC_SITE_URL`: the production URL, e.g. `https://sales-tax.vercel.app`
 3. **Cron**: after the first deploy, edit and run `supabase/cron.sql`.

@@ -1,17 +1,19 @@
 import "server-only";
-import { createCipheriv, createDecipheriv, randomBytes } from "node:crypto";
+import { createCipheriv, createDecipheriv, createHash, randomBytes } from "node:crypto";
 import { env } from "./env";
 
 // AES-256-GCM. The key lives only in the server environment (Vercel), the
 // ciphertext lives only in Supabase, so neither system alone can reveal a
 // Stripe key.
 
+// Accepts either 32 random bytes in base64 (openssl rand -base64 32) or any
+// long random passphrase, which is hashed down to a 32-byte key.
 function key(): Buffer {
-  const buf = Buffer.from(env.encryptionKey, "base64");
-  if (buf.length !== 32) {
-    throw new Error("STRIPE_KEY_ENCRYPTION_KEY must be 32 bytes, base64 encoded");
-  }
-  return buf;
+  const raw = env.encryptionKey.trim();
+  if (raw.length < 32) throw new Error("STRIPE_KEY_ENCRYPTION_KEY must be at least 32 characters");
+  const buf = Buffer.from(raw, "base64");
+  if (/^[A-Za-z0-9+/]{43}=$/.test(raw) && buf.length === 32) return buf;
+  return createHash("sha256").update(raw, "utf8").digest();
 }
 
 export function encryptSecret(plaintext: string): string {
