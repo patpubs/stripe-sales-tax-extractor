@@ -142,7 +142,7 @@ function ReportCard({
           </div>
           <p className="mt-1 text-sm text-slate-500">
             {showAccount && <span className="font-medium text-slate-600">{r.account_name} · </span>}
-            Requested {dateTime(r.created_at)}
+            {r.schedule_id ? "Scheduled" : "Requested"} {dateTime(r.created_at)}
             {r.created_by_name && ` by ${r.created_by_name}`}
             {r.completed_at && r.status === "ready" && ` · Completed ${dateTime(r.completed_at)}`}
           </p>

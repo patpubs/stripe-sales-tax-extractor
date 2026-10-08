@@ -11,6 +11,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   const name = user.full_name || user.email;
   const links = [
     { href: "/", label: "Reports" },
+    { href: "/schedules", label: "Schedules" },
     { href: "/downloads", label: "Download history" },
     ...(user.role === "super_admin"
       ? [

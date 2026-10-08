@@ -30,3 +30,11 @@ select cron.schedule(
   );
   $$
 );
+
+-- Queue scheduled monthly reports. Runs every 15 minutes; each schedule is
+-- queued at most once per month.
+select cron.schedule(
+  'stripe-report-schedules',
+  '*/15 * * * *',
+  $$ select public.enqueue_due_schedules(); $$
+);

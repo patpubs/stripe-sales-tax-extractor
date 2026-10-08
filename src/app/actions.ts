@@ -310,3 +310,97 @@ export async function retryReport(reportId: string, fromScratch = false): Promis
   revalidatePath("/");
   return { ok: true };
 }
+
+// Schedules ----------------------------------------------------------------------
+
+/** Day of month and previous full month, in the account's timezone. */
+function localToday(timeZone: string) {
+  const parts = new Intl.DateTimeFormat("en-US", { timeZone, year: "numeric", month: "numeric", day: "numeric" }).formatToParts(new Date());
+  const get = (t: string) => Number(parts.find((p) => p.type === t)?.value);
+  const year = get("year");
+  const month = get("month");
+  return { day: get("day"), prevYear: month === 1 ? year - 1 : year, prevMonth: month === 1 ? 12 : month - 1 };
+}
+
+export async function createSchedule(_: ActionResult | null, fd: FormData): Promise<ActionResult> {
+  const me = await requireUser();
+  const accountId = str(fd, "stripe_account_id");
+  const state = str(fd, "state");
+  const day = Number(str(fd, "day_of_month") || "1");
+  const runNow = fd.get("run_now") === "on";
+
+  if (state !== ALL_STATES && !US_STATES.some((s) => s.code === state)) return { ok: false, error: "Pick a state." };
+  if (!Number.isInteger(day) || day < 1 || day > 28) return { ok: false, error: "Pick a day between 1 and 28." };
+
+  const db = createAdminClient();
+  const { data: account } = await db
+    .from("stripe_accounts")
+    .select("id, timezone, archived")
+    .eq("id", accountId)
+    .maybeSingle();
+  if (!account || account.archived) return { ok: false, error: "Pick a Stripe account." };
+
+  const today = localToday(account.timezone);
+  const last = monthPeriod(today.prevYear, today.prevMonth, account.timezone);
+  // If this month's run day has already passed, last month counts as handled
+  // unless the user asked to run it now.
+  const alreadyDue = today.day >= day;
+
+  const { data: schedule, error } = await db
+    .from("report_schedules")
+    .insert({
+      stripe_account_id: account.id,
+      state,
+      day_of_month: day,
+      last_period_start: alreadyDue || runNow ? last.start.toISOString() : null,
+      last_run_at: runNow ? new Date().toISOString() : null,
+      created_by: me.id,
+    })
+    .select("id")
+    .single();
+  if (error) return { ok: false, error: error.message };
+
+  if (runNow) {
+    const { error: reportError } = await db.from("reports").insert({
+      stripe_account_id: account.id,
+      state,
+      period_type: "month",
+      period_start: last.start.toISOString(),
+      period_end: last.end.toISOString(),
+      period_label: last.label,
+      timezone: account.timezone,
+      created_by: me.id,
+      schedule_id: schedule.id,
+    });
+    if (reportError) return { ok: false, error: reportError.message };
+    after(triggerWorker);
+    revalidatePath("/");
+  }
+
+  revalidatePath("/schedules");
+  return {
+    ok: true,
+    message: runNow ? `Schedule saved, and the ${last.label} report is queued.` : "Schedule saved.",
+  };
+}
+
+async function canManageSchedule(id: string) {
+  const me = await requireUser();
+  const { data } = await createAdminClient().from("report_schedules").select("created_by").eq("id", id).maybeSingle();
+  return !!data && (me.role === "super_admin" || data.created_by === me.id);
+}
+
+export async function setScheduleEnabled(id: string, enabled: boolean): Promise<ActionResult> {
+  if (!(await canManageSchedule(id))) return { ok: false, error: "Only the person who created it or the admin can change it." };
+  await createAdminClient().from("report_schedules").update({ enabled }).eq("id", id);
+  revalidatePath("/schedules");
+  return { ok: true };
+}
+
+export async function deleteSchedule(id: string): Promise<ActionResult> {
+  if (!(await canManageSchedule(id))) return { ok: false, error: "Only the person who created it or the admin can delete it." };
+  // Reports it already produced stay in history.
+  await createAdminClient().from("report_schedules").delete().eq("id", id);
+  revalidatePath("/schedules");
+  return { ok: true };
+}

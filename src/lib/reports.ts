@@ -21,6 +21,7 @@ export type ReportView = {
   transaction_count: number | null;
   refunded_count: number | null;
   currency: string | null;
+  schedule_id: string | null;
   created_by: string | null;
   created_by_name: string | null;
   created_at: string;
