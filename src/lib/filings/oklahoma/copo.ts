@@ -42,6 +42,12 @@ export type OkTables = {
   zips: Map<string, string>;
   /** Unincorporated town -> county key. */
   towns: Map<string, string>;
+  /**
+   * Codes whose sales owe no county tax, from the rate chart: cities not
+   * marked ** (e.g. Oklahoma City 5521, Edmond) and counties at 0% (Oklahoma
+   * County). No county row is written for them.
+   */
+  noCountyTax: Set<string>;
 };
 
 export type OkSale = {
@@ -121,7 +127,7 @@ export function resolveSale(sale: OkSale, t: OkTables, o: OkOverrides): Resolved
       if (inCounty) pick = inCounty;
       else note = `Spans ${copos.length} counties and the zip didn't settle which; used ${pick}.`;
     }
-    const county = isCounty(pick) ? null : countyOf(pick);
+    const county = isCounty(pick) || t.noCountyTax.has(pick) ? null : countyOf(pick);
     if (!valid(pick)) return { error: `COPO ${pick} isn't in the base template.` };
     if (county && !valid(county)) return { error: `County COPO ${county} isn't in the base template.` };
     return { cityCopo: pick, countyCopo: county, note };
@@ -177,7 +183,7 @@ export function buildFiling(sales: OkSale[], t: OkTables, o: OkOverrides = empty
         break;
       case "town":
       case "zip":
-        add(r.countyCopo, s.net);
+        if (!t.noCountyTax.has(r.countyCopo)) add(r.countyCopo, s.net);
         countyOnlyTotal += s.net;
         if (r.kind === "zip" && !r.accepted) openItems++;
         break;

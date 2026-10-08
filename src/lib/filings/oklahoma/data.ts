@@ -17,11 +17,12 @@ async function all<T>(db: Db, table: string, columns: string): Promise<T[]> {
 }
 
 export async function loadTables(db: Db = createAdminClient()): Promise<OkTables> {
-  const [copos, cities, zips, towns] = await Promise.all([
+  const [copos, cities, zips, towns, chart] = await Promise.all([
     all<{ code: string }>(db, "ok_copos", "code"),
     all<{ city: string; copos: string[] }>(db, "ok_city_copos", "city, copos"),
     all<{ zip: string; county: string }>(db, "ok_zip_counties", "zip, county"),
     all<{ town: string; county: string }>(db, "ok_town_counties", "town, county"),
+    all<{ code: string; rate: number; county_tax: boolean }>(db, "ok_rate_chart", "code, rate, county_tax"),
   ]);
   return {
     copos: new Set(copos.map((r) => r.code)),
@@ -29,6 +30,9 @@ export async function loadTables(db: Db = createAdminClient()): Promise<OkTables
     cities: new Map(cities.map((r) => [r.city, r.copos])),
     zips: new Map(zips.map((r) => [r.zip, countyKey(r.county)])),
     towns: new Map(towns.map((r) => [r.town, countyKey(r.county)])),
+    noCountyTax: new Set(
+      chart.filter((r) => (r.code.endsWith("88") ? Number(r.rate) === 0 : !r.county_tax)).map((r) => r.code),
+    ),
   };
 }
 
@@ -183,12 +187,13 @@ export async function tableCounts() {
     if (error) throw error;
     return n ?? 0;
   };
-  const [copos, cities, aliases, zips, towns] = await Promise.all([
+  const [copos, chart, cities, aliases, zips, towns] = await Promise.all([
     count("ok_copos"),
+    count("ok_rate_chart"),
     count("ok_city_copos", false),
     count("ok_city_copos", true),
     count("ok_zip_counties"),
     count("ok_town_counties"),
   ]);
-  return { copos, cities, aliases, zips, towns };
+  return { copos, chart, cities, aliases, zips, towns };
 }

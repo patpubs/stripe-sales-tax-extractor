@@ -61,7 +61,11 @@ net (gross minus refunds) goes to its city's COPO and again to its county's xx88
 code. The file is computed when you open or download it, so a scheduled
 Oklahoma report is ready to download as soon as it finishes. Lookup tables live
 in `ok_*` tables: the base COPO template, city and alias codes, zip to county,
-and unincorporated towns. County codes are fixed in code (counties are numbered
+unincorporated towns, and the Tax Commission's rate chart (which city codes
+owe county tax too; Oklahoma County is 0%, so no 5588 row). The data loaded by
+`20261008230000_oklahoma_lookup_data.sql` comes from the rate chart for Q1 2026,
+the portal's base template, and the spellings, zips and towns from the old
+monthly process that agree with the chart. County codes are fixed in code (counties are numbered
 alphabetically, Adair 0188 to Woodward 7788). Codes not in the base template are
 never written. Mapping order: exact city or saved
 spelling; known town (county only); likely typo (used, flagged to approve or

@@ -8,6 +8,17 @@ create table public.ok_copos (
   name text
 );
 
+-- The Tax Commission's rate chart ("Rates and Codes for Sales, Use, and
+-- Lodging Tax"): each city and county code with its rate, and whether a city's
+-- sales also owe county tax (marked ** on the chart).
+create table public.ok_rate_chart (
+  code text primary key check (code ~ '^\d{4}$'),
+  name text not null,
+  rate numeric not null,
+  county_tax boolean not null,
+  effective text not null
+);
+
 -- Cleaned city name -> COPO codes. Multi-county cities have several; aliases
 -- are typos and variants saved when an operator confirms them.
 create table public.ok_city_copos (
@@ -50,12 +61,13 @@ create unique index filing_overrides_unique
   on public.filing_overrides (state, coalesce(report_id, group_id), kind, value);
 
 alter table public.ok_copos enable row level security;
+alter table public.ok_rate_chart enable row level security;
 alter table public.ok_city_copos enable row level security;
 alter table public.ok_zip_counties enable row level security;
 alter table public.ok_town_counties enable row level security;
 alter table public.filing_overrides enable row level security;
 
-revoke all on public.ok_copos, public.ok_city_copos, public.ok_zip_counties,
+revoke all on public.ok_copos, public.ok_rate_chart, public.ok_city_copos, public.ok_zip_counties,
   public.ok_town_counties, public.filing_overrides from anon, authenticated;
-grant all on public.ok_copos, public.ok_city_copos, public.ok_zip_counties,
+grant all on public.ok_copos, public.ok_rate_chart, public.ok_city_copos, public.ok_zip_counties,
   public.ok_town_counties, public.filing_overrides to service_role;

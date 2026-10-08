@@ -18,6 +18,7 @@ export default async function OklahomaDataPage() {
 
   const stats = [
     ["Base COPO codes", counts.copos],
+    ["Rate chart codes", counts.chart],
     ["Cities", counts.cities],
     ["Saved spellings", counts.aliases],
     ["Zip codes", counts.zips],
@@ -36,7 +37,7 @@ export default async function OklahomaDataPage() {
       </div>
 
       <section className="card">
-        <dl className="grid gap-4 text-sm sm:grid-cols-3 lg:grid-cols-5">
+        <dl className="grid gap-4 text-sm sm:grid-cols-3 lg:grid-cols-6">
           {stats.map(([label, n]) => (
             <div key={label}>
               <dt className="text-slate-500">{label}</dt>

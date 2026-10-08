@@ -52,6 +52,7 @@ const tables: OkTables = {
   ]),
   zips: new Map([["73160", "cleveland"], ["73102", "oklahoma"], ["73099", "canadian"], ["74820", "pontotoc"]]),
   towns: new Map([["tuskahoma", "pushmataha"]]),
+  noCountyTax: new Set(),
 };
 
 const sale = (id: string, city: string, zip: string, net: number): OkSale => ({ id, city, zip, net, customer: null });
@@ -162,4 +163,12 @@ test("county codes follow the Tax Commission's alphabetical numbering", () => {
   assert.equal(COUNTY_COPOS.get("tulsa"), "7288");
   assert.equal(COUNTY_COPOS.get("wagoner"), "7388");
   assert.equal(COUNTY_COPOS.get("woodward"), "7788");
+});
+
+test("no county row where the rate chart says no county tax", () => {
+  const t = { ...tables, towns: new Map([["newalla", "oklahoma"]]), noCountyTax: new Set(["5521", "5588"]) };
+  const f = buildFiling([sale("a", "Oklahoma City", "73102", 500), sale("b", "Oklahoma City", "73160", 100), sale("c", "Newalla", "", 70)], t);
+  assert.deepEqual(f.totals, [["1421", 100], ["1488", 100], ["5521", 500]]);
+  assert.equal(f.countyOnlyTotal, 70);
+  assert.ok(f.balanced);
 });
