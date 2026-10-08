@@ -12,17 +12,18 @@ type ScheduleRecord = {
   enabled: boolean;
   last_run_at: string | null;
   created_by: string | null;
-  stripe_accounts: { name: string; timezone: string } | null;
+  stripe_account_ids: string[];
   profiles: { full_name: string | null; email: string } | null;
 };
 
 export default async function SchedulesPage() {
   const user = await requireUser();
-  const [accounts, { data, error }] = await Promise.all([
+  const [accounts, allAccounts, { data, error }] = await Promise.all([
     listAccountOptions(),
+    listAccountOptions(true),
     createAdminClient()
       .from("report_schedules")
-      .select("id, state, day_of_month, enabled, last_run_at, created_by, stripe_accounts(name, timezone), profiles:created_by(full_name, email)")
+      .select("id, state, stripe_account_ids, day_of_month, enabled, last_run_at, created_by, profiles:created_by(full_name, email)")
       .order("created_at"),
   ]);
   if (error) throw error;
@@ -48,8 +49,8 @@ export default async function SchedulesPage() {
                 state: s.state,
                 day_of_month: s.day_of_month,
                 enabled: s.enabled,
-                account_name: s.stripe_accounts?.name ?? "Deleted account",
-                timezone: s.stripe_accounts?.timezone ?? "",
+                account_names: s.stripe_account_ids.map((id) => allAccounts.find((a) => a.id === id)?.name ?? "Deleted account"),
+                timezone: allAccounts.find((a) => a.id === s.stripe_account_ids[0])?.timezone ?? "",
                 created_by_name: s.profiles?.full_name || s.profiles?.email || null,
                 last_run_label: s.last_run_at ? dateTime(s.last_run_at) : null,
               }}

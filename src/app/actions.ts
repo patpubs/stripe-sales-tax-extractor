@@ -227,50 +227,104 @@ export async function setStripeAccountArchived(id: string, archived: boolean): P
 
 // Reports ----------------------------------------------------------------------
 
+const ids = (fd: FormData, k: string) => [...new Set(fd.getAll(k).map((v) => String(v).trim()).filter(Boolean))];
+
+/** Live (not archived) accounts among `accountIds`, in the order given. */
+async function liveAccounts(accountIds: string[]) {
+  if (accountIds.length === 0) return [];
+  const { data } = await createAdminClient()
+    .from("stripe_accounts")
+    .select("id, timezone, archived")
+    .in("id", accountIds);
+  const live = (data ?? []).filter((a) => !a.archived);
+  return accountIds.map((id) => live.find((a) => a.id === id)).filter((a) => !!a);
+}
+
+type ReportPeriodInput =
+  | { type: "month"; year: number; month: number }
+  | { type: "custom"; from: string; to: string };
+
+/**
+ * Queue one report per account. Several accounts are tied together in a
+ * report group so they show and download as one combined report.
+ */
+async function queueReports(opts: {
+  accounts: { id: string; timezone: string }[];
+  state: string;
+  period: ReportPeriodInput;
+  createdBy: string;
+  scheduleId?: string;
+}): Promise<{ label: string } | { error: string }> {
+  const db = createAdminClient();
+  let rows;
+  try {
+    rows = opts.accounts.map((a) => {
+      const p =
+        opts.period.type === "month"
+          ? monthPeriod(opts.period.year, opts.period.month, a.timezone)
+          : customPeriod(opts.period.from, opts.period.to, a.timezone);
+      return {
+        stripe_account_id: a.id,
+        state: opts.state,
+        period_type: opts.period.type,
+        period_start: p.start.toISOString(),
+        period_end: p.end.toISOString(),
+        period_label: p.label,
+        timezone: a.timezone,
+        created_by: opts.createdBy,
+        schedule_id: opts.scheduleId ?? null,
+      };
+    });
+  } catch (err) {
+    return { error: (err as Error).message };
+  }
+  if (rows.every((r) => Date.parse(r.period_start) > Date.now())) return { error: "That period hasn't started yet." };
+
+  let groupId: string | null = null;
+  if (rows.length > 1) {
+    const { data: group, error } = await db
+      .from("report_groups")
+      .insert({ state: opts.state, period_label: rows[0].period_label, created_by: opts.createdBy, schedule_id: opts.scheduleId ?? null })
+      .select("id")
+      .single();
+    if (error) return { error: error.message };
+    groupId = group.id;
+  }
+
+  const { error } = await db.from("reports").insert(rows.map((r) => ({ ...r, group_id: groupId })));
+  if (error) {
+    if (groupId) await db.from("report_groups").delete().eq("id", groupId);
+    return { error: error.message };
+  }
+  after(triggerWorker);
+  revalidatePath("/");
+  return { label: rows[0].period_label };
+}
+
 export async function requestReport(_: ActionResult | null, fd: FormData): Promise<ActionResult> {
   const me = await requireUser();
-  const accountId = str(fd, "stripe_account_id");
   const state = str(fd, "state");
-  const periodType = str(fd, "period_type") === "custom" ? "custom" : "month";
-
   if (state !== ALL_STATES && !US_STATES.some((s) => s.code === state)) {
     return { ok: false, error: "Pick a state." };
   }
 
-  const db = createAdminClient();
-  const { data: account } = await db
-    .from("stripe_accounts")
-    .select("id, timezone, archived")
-    .eq("id", accountId)
-    .maybeSingle();
-  if (!account || account.archived) return { ok: false, error: "Pick a Stripe account." };
+  const accounts = await liveAccounts(ids(fd, "stripe_account_id"));
+  if (accounts.length === 0) return { ok: false, error: "Pick at least one Stripe account." };
 
-  let period;
-  try {
-    period =
-      periodType === "month"
-        ? monthPeriod(Number(str(fd, "year")), Number(str(fd, "month")), account.timezone)
-        : customPeriod(str(fd, "from"), str(fd, "to"), account.timezone);
-  } catch (err) {
-    return { ok: false, error: (err as Error).message };
-  }
-  if (period.start.getTime() > Date.now()) return { ok: false, error: "That period hasn't started yet." };
+  const period: ReportPeriodInput =
+    str(fd, "period_type") === "custom"
+      ? { type: "custom", from: str(fd, "from"), to: str(fd, "to") }
+      : { type: "month", year: Number(str(fd, "year")), month: Number(str(fd, "month")) };
 
-  const { error } = await db.from("reports").insert({
-    stripe_account_id: account.id,
-    state,
-    period_type: periodType,
-    period_start: period.start.toISOString(),
-    period_end: period.end.toISOString(),
-    period_label: period.label,
-    timezone: account.timezone,
-    created_by: me.id,
-  });
-  if (error) return { ok: false, error: error.message };
-
-  after(triggerWorker);
-  revalidatePath("/");
-  return { ok: true, message: "Report queued. It runs in the background; you can leave this page." };
+  const result = await queueReports({ accounts, state, period, createdBy: me.id });
+  if ("error" in result) return { ok: false, error: result.error };
+  return {
+    ok: true,
+    message:
+      accounts.length > 1
+        ? `Combined report for ${accounts.length} accounts queued. It runs in the background; you can leave this page.`
+        : "Report queued. It runs in the background; you can leave this page.",
+  };
 }
 
 async function canManageReport(reportId: string) {
@@ -311,6 +365,29 @@ export async function retryReport(reportId: string, fromScratch = false): Promis
   return { ok: true };
 }
 
+async function canManageGroup(groupId: string) {
+  const me = await requireUser();
+  const { data } = await createAdminClient().from("report_groups").select("created_by").eq("id", groupId).maybeSingle();
+  return !!data && (me.role === "super_admin" || data.created_by === me.id);
+}
+
+export async function deleteReportGroup(groupId: string): Promise<ActionResult> {
+  if (!(await canManageGroup(groupId))) return { ok: false, error: "Only the person who ran it or the admin can delete it." };
+  // Its per-account reports are deleted with it.
+  const { error } = await createAdminClient().from("report_groups").delete().eq("id", groupId);
+  if (error) return { ok: false, error: error.message };
+  revalidatePath("/");
+  return { ok: true };
+}
+
+/** Re-run every account in a combined report from scratch. */
+export async function rerunReportGroup(groupId: string): Promise<ActionResult> {
+  if (!(await canManageGroup(groupId))) return { ok: false, error: "Not allowed." };
+  const { data } = await createAdminClient().from("reports").select("id").eq("group_id", groupId);
+  for (const r of data ?? []) await retryReport(r.id, true);
+  return { ok: true };
+}
+
 // Schedules ----------------------------------------------------------------------
 
 /** Day of month and previous full month, in the account's timezone. */
@@ -324,7 +401,6 @@ function localToday(timeZone: string) {
 
 export async function createSchedule(_: ActionResult | null, fd: FormData): Promise<ActionResult> {
   const me = await requireUser();
-  const accountId = str(fd, "stripe_account_id");
   const state = str(fd, "state");
   const day = Number(str(fd, "day_of_month") || "1");
   const runNow = fd.get("run_now") === "on";
@@ -332,24 +408,21 @@ export async function createSchedule(_: ActionResult | null, fd: FormData): Prom
   if (state !== ALL_STATES && !US_STATES.some((s) => s.code === state)) return { ok: false, error: "Pick a state." };
   if (!Number.isInteger(day) || day < 1 || day > 28) return { ok: false, error: "Pick a day between 1 and 28." };
 
-  const db = createAdminClient();
-  const { data: account } = await db
-    .from("stripe_accounts")
-    .select("id, timezone, archived")
-    .eq("id", accountId)
-    .maybeSingle();
-  if (!account || account.archived) return { ok: false, error: "Pick a Stripe account." };
+  const accounts = await liveAccounts(ids(fd, "stripe_account_id"));
+  if (accounts.length === 0) return { ok: false, error: "Pick at least one Stripe account." };
 
-  const today = localToday(account.timezone);
-  const last = monthPeriod(today.prevYear, today.prevMonth, account.timezone);
+  // The first account's timezone decides when the schedule is due (matches enqueue_due_schedules).
+  const today = localToday(accounts[0].timezone);
+  const last = monthPeriod(today.prevYear, today.prevMonth, accounts[0].timezone);
   // If this month's run day has already passed, last month counts as handled
   // unless the user asked to run it now.
   const alreadyDue = today.day >= day;
 
+  const db = createAdminClient();
   const { data: schedule, error } = await db
     .from("report_schedules")
     .insert({
-      stripe_account_id: account.id,
+      stripe_account_ids: accounts.map((a) => a.id),
       state,
       day_of_month: day,
       last_period_start: alreadyDue || runNow ? last.start.toISOString() : null,
@@ -361,20 +434,14 @@ export async function createSchedule(_: ActionResult | null, fd: FormData): Prom
   if (error) return { ok: false, error: error.message };
 
   if (runNow) {
-    const { error: reportError } = await db.from("reports").insert({
-      stripe_account_id: account.id,
+    const result = await queueReports({
+      accounts,
       state,
-      period_type: "month",
-      period_start: last.start.toISOString(),
-      period_end: last.end.toISOString(),
-      period_label: last.label,
-      timezone: account.timezone,
-      created_by: me.id,
-      schedule_id: schedule.id,
+      period: { type: "month", year: today.prevYear, month: today.prevMonth },
+      createdBy: me.id,
+      scheduleId: schedule.id,
     });
-    if (reportError) return { ok: false, error: reportError.message };
-    after(triggerWorker);
-    revalidatePath("/");
+    if ("error" in result) return { ok: false, error: result.error };
   }
 
   revalidatePath("/schedules");

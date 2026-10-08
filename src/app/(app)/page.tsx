@@ -1,12 +1,13 @@
 import Link from "next/link";
 import { requireUser } from "@/lib/auth";
-import { listAccountOptions, listReports } from "@/lib/reports";
+import { listAccountOptions, listGroups, listReports } from "@/lib/reports";
 import { ReportForm } from "@/components/report-form";
 import { ReportHistory } from "@/components/report-history";
 
 export default async function ReportsPage() {
   const user = await requireUser();
-  const [accounts, reports] = await Promise.all([listAccountOptions(), listReports({ limit: 100 })]);
+  const [accounts, reports] = await Promise.all([listAccountOptions(), listReports({ limit: 150 })]);
+  const groups = await listGroups(reports);
 
   return (
     <div className="space-y-6">
@@ -30,7 +31,7 @@ export default async function ReportsPage() {
         <ReportForm accounts={accounts} />
       )}
 
-      <ReportHistory initialReports={reports} accounts={accounts} currentUserId={user.id} isAdmin={user.role === "super_admin"} />
+      <ReportHistory initialReports={reports} initialGroups={groups} accounts={accounts} currentUserId={user.id} isAdmin={user.role === "super_admin"} />
     </div>
   );
 }

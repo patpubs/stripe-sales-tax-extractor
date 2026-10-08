@@ -22,6 +22,7 @@ export type ReportView = {
   refunded_count: number | null;
   currency: string | null;
   schedule_id: string | null;
+  group_id: string | null;
   created_by: string | null;
   created_by_name: string | null;
   created_at: string;
@@ -45,6 +46,31 @@ export async function listReports(opts: { accountId?: string; limit?: number } =
       created_by_name: profiles?.full_name || profiles?.email || null,
     } as ReportView;
   });
+}
+
+export type GroupView = {
+  id: string;
+  state: string;
+  period_label: string;
+  schedule_id: string | null;
+  created_by: string | null;
+  created_by_name: string | null;
+  created_at: string;
+};
+
+/** Groups (combined reports) that the given reports belong to. */
+export async function listGroups(reports: ReportView[]): Promise<GroupView[]> {
+  const ids = [...new Set(reports.map((r) => r.group_id).filter((id): id is string => !!id))];
+  if (ids.length === 0) return [];
+  const { data, error } = await createAdminClient()
+    .from("report_groups")
+    .select("*, profiles:created_by(full_name, email)")
+    .in("id", ids);
+  if (error) throw error;
+  return (data ?? []).map(({ profiles, ...g }) => ({
+    ...g,
+    created_by_name: profiles?.full_name || profiles?.email || null,
+  })) as GroupView[];
 }
 
 export type AccountOption = { id: string; name: string; timezone: string; livemode: boolean | null };

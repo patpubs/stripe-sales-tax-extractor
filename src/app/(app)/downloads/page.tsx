@@ -9,7 +9,7 @@ export default async function DownloadsPage() {
   await requireUser();
   const { data, error } = await createAdminClient()
     .from("downloads")
-    .select("id, variant, filename, row_count, created_at, report_id, profiles:user_id(full_name, email), reports(state, period_label, status, stripe_accounts(name))")
+    .select("id, variant, filename, row_count, created_at, report_id, group_id, profiles:user_id(full_name, email), reports(state, period_label, status, stripe_accounts(name)), report_groups(state, period_label, reports(status, stripe_accounts(name)))")
     .order("created_at", { ascending: false })
     .limit(200);
   if (error) throw error;
@@ -22,9 +22,37 @@ export default async function DownloadsPage() {
     row_count: number | null;
     created_at: string;
     report_id: string | null;
+    group_id: string | null;
+    report_groups: {
+      state: string;
+      period_label: string;
+      reports: Array<{ status: string; stripe_accounts: { name: string } | null }>;
+    } | null;
     profiles: { full_name: string | null; email: string } | null;
     reports: { state: string; period_label: string; status: string; stripe_accounts: { name: string } | null } | null;
   }>;
+
+  // A download is of one report or of a combined report (group).
+  const view = rows.map((d) => {
+    if (d.report_groups) {
+      const g = d.report_groups;
+      return {
+        ...d,
+        title: `${stateName(g.state)} — ${g.period_label}`,
+        accounts: `Combined: ${g.reports.map((r) => r.stripe_accounts?.name).filter(Boolean).sort().join(" + ")}`,
+        again: g.reports.length > 0 && g.reports.every((r) => r.status === "ready") ? `/api/report-groups/${d.group_id}/csv` : null,
+      };
+    }
+    if (d.reports) {
+      return {
+        ...d,
+        title: `${stateName(d.reports.state)} — ${d.reports.period_label}`,
+        accounts: d.reports.stripe_accounts?.name ?? "",
+        again: d.reports.status === "ready" ? `/api/reports/${d.report_id}/csv` : null,
+      };
+    }
+    return { ...d, title: null, accounts: "", again: null };
+  });
 
   return (
     <div className="space-y-6">
@@ -42,19 +70,19 @@ export default async function DownloadsPage() {
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
-            {rows.length === 0 && (
+            {view.length === 0 && (
               <tr>
                 <td colSpan={6} className="px-5 py-6 text-slate-500">No downloads yet.</td>
               </tr>
             )}
-            {rows.map((d) => (
+            {view.map((d) => (
               <tr key={d.id}>
                 <td className="whitespace-nowrap px-5 py-3">{dateTime(d.created_at)}</td>
                 <td className="px-5 py-3">
-                  {d.reports ? (
+                  {d.title ? (
                     <>
-                      <div className="font-medium">{stateName(d.reports.state)} — {d.reports.period_label}</div>
-                      <div className="text-xs text-slate-500">{d.reports.stripe_accounts?.name}</div>
+                      <div className="font-medium">{d.title}</div>
+                      <div className="text-xs text-slate-500">{d.accounts}</div>
                     </>
                   ) : (
                     <span className="text-slate-400">{d.filename} (report deleted)</span>
@@ -64,8 +92,8 @@ export default async function DownloadsPage() {
                 <td className="px-5 py-3">{d.row_count?.toLocaleString() ?? "—"}</td>
                 <td className="px-5 py-3">{d.profiles?.full_name || d.profiles?.email || "—"}</td>
                 <td className="px-5 py-3 text-right">
-                  {d.report_id && d.reports?.status === "ready" && (
-                    <a className="btn-secondary py-1.5" href={`/api/reports/${d.report_id}/csv?variant=${d.variant}`}>
+                  {d.again && (
+                    <a className="btn-secondary py-1.5" href={`${d.again}?variant=${d.variant}`}>
                       <Download className="size-4" /> Again
                     </a>
                   )}

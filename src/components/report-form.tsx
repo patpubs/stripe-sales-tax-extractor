@@ -22,7 +22,7 @@ export function ReportForm({ accounts }: { accounts: AccountOption[] }) {
   const thisYear = new Date().getFullYear();
   const years = Array.from({ length: 8 }, (_, i) => thisYear - i);
 
-  const [accountId, setAccountId] = useState(accounts[0]?.id ?? "");
+  const [accountIds, setAccountIds] = useState<string[]>(accounts[0] ? [accounts[0].id] : []);
   const [usState, setUsState] = useState("OK");
   const [periodType, setPeriodType] = useState<"month" | "custom">("month");
 
@@ -30,21 +30,24 @@ export function ReportForm({ accounts }: { accounts: AccountOption[] }) {
   useEffect(() => {
     try {
       const saved = JSON.parse(localStorage.getItem(LAST_KEY) ?? "{}");
-      if (saved.accountId && accounts.some((a) => a.id === saved.accountId)) setAccountId(saved.accountId);
+      const savedIds: string[] = saved.accountIds ?? (saved.accountId ? [saved.accountId] : []);
+      const valid = savedIds.filter((id) => accounts.some((a) => a.id === id));
+      if (valid.length) setAccountIds(valid);
       if (saved.state) setUsState(saved.state);
     } catch {}
   }, [accounts]);
   useEffect(() => {
     try {
-      localStorage.setItem(LAST_KEY, JSON.stringify({ accountId, state: usState }));
+      localStorage.setItem(LAST_KEY, JSON.stringify({ accountIds, state: usState }));
     } catch {}
-  }, [accountId, usState]);
+  }, [accountIds, usState]);
 
   useEffect(() => {
     if (state?.ok) window.dispatchEvent(new Event("reports:changed"));
   }, [state]);
 
-  const account = accounts.find((a) => a.id === accountId);
+  const selected = accounts.filter((a) => accountIds.includes(a.id));
+  const timezones = [...new Set(selected.map((a) => a.timezone))];
 
   return (
     <section className="card">
@@ -52,22 +55,7 @@ export function ReportForm({ accounts }: { accounts: AccountOption[] }) {
       <form action={action} className="mt-5 space-y-5">
         <input type="hidden" name="period_type" value={periodType} />
         <div className="grid gap-5 md:grid-cols-2">
-          <div>
-            <label className="label" htmlFor="stripe_account_id">Stripe account</label>
-            <select
-              id="stripe_account_id"
-              name="stripe_account_id"
-              className="input"
-              value={accountId}
-              onChange={(e) => setAccountId(e.target.value)}
-            >
-              {accounts.map((a) => (
-                <option key={a.id} value={a.id}>
-                  {a.name}{a.livemode === false ? " (test mode)" : ""}
-                </option>
-              ))}
-            </select>
-          </div>
+          <AccountPicker accounts={accounts} value={accountIds} onChange={setAccountIds} />
           <div>
             <label className="label" htmlFor="state">State</label>
             <select id="state" name="state" className="input" value={usState} onChange={(e) => setUsState(e.target.value)}>
@@ -127,12 +115,66 @@ export function ReportForm({ accounts }: { accounts: AccountOption[] }) {
           </div>
         )}
 
-        {account && (
-          <p className="text-xs text-slate-500">Dates are in {account.timezone}, the timezone set for this account.</p>
+        {timezones.length > 0 && (
+          <p className="text-xs text-slate-500">
+            Dates are in {timezones.join(" / ")}, the timezone set for {selected.length > 1 ? "each account" : "this account"}.
+            {selected.length > 1 && " Picking several accounts makes one combined report."}
+          </p>
         )}
         <FormMessage state={state} />
-        <SubmitButton className="btn-primary">Generate Report</SubmitButton>
+        <SubmitButton className="btn-primary">{selected.length > 1 ? "Generate Combined Report" : "Generate Report"}</SubmitButton>
       </form>
     </section>
+  );
+}
+
+/** Checkbox list of Stripe accounts; submits each checked id as stripe_account_id. */
+export function AccountPicker({
+  accounts,
+  value,
+  onChange,
+}: {
+  accounts: AccountOption[];
+  value?: string[];
+  onChange?: (ids: string[]) => void;
+}) {
+  const [inner, setInner] = useState<string[]>(accounts[0] ? [accounts[0].id] : []);
+  const ids = value ?? inner;
+  const set = onChange ?? setInner;
+  const toggle = (id: string) => set(ids.includes(id) ? ids.filter((x) => x !== id) : [...ids, id]);
+
+  return (
+    <fieldset>
+      <legend className="label">Stripe account{accounts.length > 1 ? "s" : ""}</legend>
+      <div className="flex flex-wrap gap-2">
+        {accounts.map((a) => {
+          const on = ids.includes(a.id);
+          return (
+            <label
+              key={a.id}
+              className={`flex cursor-pointer items-center gap-2 rounded-lg border px-3 py-2 text-sm ${
+                on ? "border-blue-500 bg-blue-50 text-blue-800" : "border-slate-300 text-slate-700 hover:bg-slate-50"
+              }`}
+            >
+              <input
+                type="checkbox"
+                name="stripe_account_id"
+                value={a.id}
+                checked={on}
+                onChange={() => toggle(a.id)}
+                className="size-4"
+              />
+              {a.name}
+              {a.livemode === false && <span className="text-xs text-amber-700">(test)</span>}
+            </label>
+          );
+        })}
+      </div>
+      {accounts.length > 1 && (
+        <button type="button" className="mt-1.5 text-xs text-blue-600 hover:underline" onClick={() => set(accounts.map((a) => a.id))}>
+          Select all
+        </button>
+      )}
+    </fieldset>
   );
 }

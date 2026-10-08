@@ -1,13 +1,13 @@
-import { NextResponse, type NextRequest } from "next/server";
+import { NextResponse } from "next/server";
 import { getCurrentUser } from "@/lib/auth";
-import { listReports } from "@/lib/reports";
+import { listGroups, listReports } from "@/lib/reports";
 
 export const dynamic = "force-dynamic";
 
-export async function GET(req: NextRequest) {
+export async function GET() {
   const user = await getCurrentUser();
   if (!user) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
-  const accountId = req.nextUrl.searchParams.get("account") || undefined;
-  const reports = await listReports({ accountId, limit: 100 });
-  return NextResponse.json({ reports }, { headers: { "cache-control": "no-store" } });
+  const reports = await listReports({ limit: 150 });
+  const groups = await listGroups(reports);
+  return NextResponse.json({ reports, groups }, { headers: { "cache-control": "no-store" } });
 }

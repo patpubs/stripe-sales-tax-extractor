@@ -4,6 +4,7 @@ import { Trash2 } from "lucide-react";
 import { createSchedule, deleteSchedule, setScheduleEnabled } from "@/app/actions";
 import type { AccountOption } from "@/lib/reports";
 import { ALL_STATES, US_STATES, stateName } from "@/lib/states";
+import { AccountPicker } from "@/components/report-form";
 import { FormMessage } from "@/components/form-message";
 import { SubmitButton } from "@/components/submit-button";
 
@@ -19,13 +20,8 @@ export function ScheduleForm({ accounts }: { accounts: AccountOption[] }) {
       <h2 className="text-lg font-semibold">New monthly schedule</h2>
       <form action={action} className="mt-5 space-y-5">
         <div className="grid gap-5 md:grid-cols-3">
-          <div>
-            <label className="label" htmlFor="stripe_account_id">Stripe account</label>
-            <select id="stripe_account_id" name="stripe_account_id" className="input">
-              {accounts.map((a) => (
-                <option key={a.id} value={a.id}>{a.name}{a.livemode === false ? " (test mode)" : ""}</option>
-              ))}
-            </select>
+          <div className="md:col-span-3">
+            <AccountPicker accounts={accounts} />
           </div>
           <div>
             <label className="label" htmlFor="state">State</label>
@@ -64,7 +60,7 @@ type Schedule = {
   state: string;
   day_of_month: number;
   enabled: boolean;
-  account_name: string;
+  account_names: string[];
   timezone: string;
   created_by_name: string | null;
   last_run_label: string | null;
@@ -76,7 +72,8 @@ export function ScheduleRow({ schedule: s, canManage }: { schedule: Schedule; ca
     <div className={`flex flex-wrap items-center gap-3 py-4 ${s.enabled ? "" : "opacity-60"}`}>
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-2 font-medium">
-          {stateName(s.state)} · {s.account_name}
+          {stateName(s.state)} · {s.account_names.join(" + ")}
+          {s.account_names.length > 1 && <span className="badge border-violet-200 bg-violet-50 text-violet-700">Combined</span>}
           {!s.enabled && <span className="badge border-slate-200 bg-slate-50 text-slate-500">Paused</span>}
         </div>
         <div className="mt-0.5 text-xs text-slate-500">

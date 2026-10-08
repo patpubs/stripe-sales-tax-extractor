@@ -1,47 +1,70 @@
 "use client";
 import { useCallback, useEffect, useRef, useState, useTransition } from "react";
-import { AlertCircle, CheckCircle2, Clock, Download, Loader2, RefreshCw, RotateCw, Trash2, XCircle } from "lucide-react";
-import type { AccountOption, ReportView } from "@/lib/reports";
-import { cancelReport, deleteReport, retryReport } from "@/app/actions";
+import { AlertCircle, CheckCircle2, Clock, Download, Layers, Loader2, RefreshCw, RotateCw, Trash2, XCircle } from "lucide-react";
+import type { AccountOption, GroupView, ReportView } from "@/lib/reports";
+import { cancelReport, deleteReport, deleteReportGroup, rerunReportGroup, retryReport } from "@/app/actions";
 import { dateTime, money } from "@/lib/format";
 import { stateName } from "@/lib/states";
 import { CSV_VARIANTS, type CsvVariant } from "@/lib/report-variants";
 
 const ACTIVE = new Set(["queued", "processing"]);
 
+type Item =
+  | { kind: "report"; at: string; report: ReportView }
+  | { kind: "group"; at: string; group: GroupView; reports: ReportView[] };
+
+/** Standalone reports and combined (grouped) reports, newest first. */
+function buildItems(reports: ReportView[], groups: GroupView[], accountFilter: string): Item[] {
+  const byGroup = new Map(groups.map((g) => [g.id, [] as ReportView[]]));
+  const items: Item[] = [];
+  for (const r of reports) {
+    const members = r.group_id ? byGroup.get(r.group_id) : undefined;
+    if (members) members.push(r);
+    else items.push({ kind: "report", at: r.created_at, report: r });
+  }
+  for (const g of groups) {
+    const members = byGroup.get(g.id) ?? [];
+    if (members.length) items.push({ kind: "group", at: g.created_at, group: g, reports: members });
+  }
+  return items
+    .filter((i) =>
+      !accountFilter ||
+      (i.kind === "report" ? i.report.stripe_account_id === accountFilter : i.reports.some((r) => r.stripe_account_id === accountFilter)),
+    )
+    .sort((a, b) => b.at.localeCompare(a.at));
+}
+
 export function ReportHistory({
   initialReports,
+  initialGroups,
   accounts,
   currentUserId,
   isAdmin,
 }: {
   initialReports: ReportView[];
+  initialGroups: GroupView[];
   accounts: AccountOption[];
   currentUserId: string;
   isAdmin: boolean;
 }) {
-  const [reports, setReports] = useState(initialReports);
+  const [data, setData] = useState({ reports: initialReports, groups: initialGroups });
   const [accountFilter, setAccountFilter] = useState("");
   const [refreshing, setRefreshing] = useState(false);
-  const filterRef = useRef(accountFilter);
-  filterRef.current = accountFilter;
 
   const refresh = useCallback(async () => {
     setRefreshing(true);
     try {
-      const qs = filterRef.current ? `?account=${filterRef.current}` : "";
-      const res = await fetch(`/api/reports${qs}`, { cache: "no-store" });
-      if (res.ok) setReports((await res.json()).reports);
+      const res = await fetch("/api/reports", { cache: "no-store" });
+      if (res.ok) {
+        const json = await res.json();
+        setData({ reports: json.reports, groups: json.groups ?? [] });
+      }
     } finally {
       setRefreshing(false);
     }
   }, []);
 
-  useEffect(() => {
-    refresh();
-  }, [accountFilter, refresh]);
-
-  const anyActive = reports.some((r) => ACTIVE.has(r.status));
+  const anyActive = data.reports.some((r) => ACTIVE.has(r.status));
   useEffect(() => {
     const id = setInterval(refresh, anyActive ? 4000 : 30000);
     const onChange = () => refresh();
@@ -51,6 +74,8 @@ export function ReportHistory({
       window.removeEventListener("reports:changed", onChange);
     };
   }, [anyActive, refresh]);
+
+  const items = buildItems(data.reports, data.groups, accountFilter);
 
   return (
     <section className="card">
@@ -73,18 +98,155 @@ export function ReportHistory({
       </div>
 
       <div className="mt-5 space-y-4">
-        {reports.length === 0 && <p className="text-sm text-slate-500">No reports yet.</p>}
-        {reports.map((r) => (
-          <ReportCard
-            key={r.id}
-            report={r}
-            canManage={isAdmin || r.created_by === currentUserId}
-            showAccount={accounts.length > 1}
-            onChanged={refresh}
-          />
-        ))}
+        {items.length === 0 && <p className="text-sm text-slate-500">No reports yet.</p>}
+        {items.map((i) =>
+          i.kind === "report" ? (
+            <ReportCard
+              key={i.report.id}
+              report={i.report}
+              canManage={isAdmin || i.report.created_by === currentUserId}
+              showAccount={accounts.length > 1}
+              onChanged={refresh}
+            />
+          ) : (
+            <GroupCard
+              key={i.group.id}
+              group={i.group}
+              reports={i.reports}
+              canManage={isAdmin || i.group.created_by === currentUserId}
+              onChanged={refresh}
+            />
+          ),
+        )}
       </div>
     </section>
+  );
+}
+
+function groupStatus(reports: ReportView[]): ReportView["status"] {
+  const has = (s: ReportView["status"]) => reports.some((r) => r.status === s);
+  if (has("failed")) return "failed";
+  if (has("processing")) return "processing";
+  if (has("queued")) return reports.every((r) => r.status === "queued") ? "queued" : "processing";
+  if (has("canceled")) return "canceled";
+  return "ready";
+}
+
+function GroupCard({
+  group: g,
+  reports,
+  canManage,
+  onChanged,
+}: {
+  group: GroupView;
+  reports: ReportView[];
+  canManage: boolean;
+  onChanged: () => void;
+}) {
+  const [pending, start] = useTransition();
+  const run = (fn: () => Promise<unknown>) => start(async () => { await fn(); onChanged(); });
+  const status = groupStatus(reports);
+  const sorted = [...reports].sort((a, b) => a.account_name.localeCompare(b.account_name));
+  const currency = reports.find((r) => r.currency)?.currency ?? "usd";
+  const sum = (k: "gross_amount" | "refunded_amount" | "net_amount" | "transaction_count" | "refunded_count") =>
+    reports.reduce((t, r) => t + (r[k] ?? 0), 0);
+
+  return (
+    <article className="rounded-xl border border-slate-200 p-5">
+      <div className="flex flex-wrap items-start gap-3">
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap items-center gap-2">
+            <h3 className="text-base font-semibold">
+              {stateName(g.state)} — {g.period_label}
+            </h3>
+            <StatusBadge status={status} />
+            <span className="badge border-violet-200 bg-violet-50 text-violet-700">
+              <Layers className="size-3" /> Combined
+            </span>
+          </div>
+          <p className="mt-1 text-sm text-slate-500">
+            <span className="font-medium text-slate-600">{sorted.map((r) => r.account_name).join(" + ")} · </span>
+            {g.schedule_id ? "Scheduled" : "Requested"} {dateTime(g.created_at)}
+            {g.created_by_name && ` by ${g.created_by_name}`}
+          </p>
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          {status === "ready" && <DownloadMenu href={`/api/report-groups/${g.id}/csv`} />}
+          {canManage && status === "ready" && (
+            <button
+              className="btn-ghost"
+              disabled={pending}
+              title="Re-run to pick up refunds issued since"
+              onClick={() => {
+                if (confirm("Re-run this combined report from Stripe? This picks up any refunds issued since it was generated.")) {
+                  run(() => rerunReportGroup(g.id));
+                }
+              }}
+            >
+              <RotateCw className="size-4" />
+            </button>
+          )}
+          {canManage && (
+            <button
+              className="btn-ghost"
+              disabled={pending}
+              title="Delete"
+              onClick={() => {
+                if (confirm("Delete this combined report?")) run(() => deleteReportGroup(g.id));
+              }}
+            >
+              <Trash2 className="size-4" />
+            </button>
+          )}
+        </div>
+      </div>
+
+      <ul className="mt-4 divide-y divide-slate-100 border-t border-slate-100 text-sm">
+        {sorted.map((r) => {
+          const pct = progressPct(r);
+          return (
+            <li key={r.id} className="flex flex-wrap items-center gap-x-3 gap-y-1 py-2.5">
+              <span className="font-medium">{r.account_name}</span>
+              <StatusBadge status={r.status} />
+              <span className="text-slate-500">
+                {r.status === "ready" &&
+                  `${(r.transaction_count ?? 0).toLocaleString()} transactions · net ${money(r.net_amount, r.currency ?? currency)}`}
+                {r.status === "queued" && "Waiting to start…"}
+                {r.status === "processing" &&
+                  `${r.scanned_count.toLocaleString()} charges scanned${pct !== null ? ` · ${pct}%` : ""}`}
+                {r.status === "failed" && <span className="text-red-700">{r.error}</span>}
+                {ACTIVE.has(r.status) && r.error && <span className="text-amber-700"> · retrying after a Stripe error</span>}
+              </span>
+              <span className="ml-auto flex gap-2">
+                {canManage && ACTIVE.has(r.status) && (
+                  <button className="btn-ghost py-1" disabled={pending} onClick={() => run(() => cancelReport(r.id))} title="Cancel">
+                    <XCircle className="size-4" />
+                  </button>
+                )}
+                {canManage && (r.status === "failed" || r.status === "canceled") && (
+                  <button className="btn-secondary py-1" disabled={pending} onClick={() => run(() => retryReport(r.id))}>
+                    <RotateCw className="size-4" /> Resume
+                  </button>
+                )}
+              </span>
+            </li>
+          );
+        })}
+      </ul>
+
+      {status === "ready" && (
+        <dl className="mt-2 grid grid-cols-2 gap-4 border-t border-slate-100 pt-4 md:grid-cols-4">
+          <Metric label="Gross Sales" value={money(sum("gross_amount"), currency)} />
+          <Metric label="Refunds" value={money(sum("refunded_amount"), currency)} className="text-red-600" />
+          <Metric label="Net Taxable Sales" value={money(sum("net_amount"), currency)} className="text-blue-600" />
+          <Metric
+            label="Transactions"
+            value={sum("transaction_count").toLocaleString()}
+            hint={sum("refunded_count") ? `${sum("refunded_count")} with refunds` : undefined}
+          />
+        </dl>
+      )}
+    </article>
   );
 }
 
@@ -148,7 +310,7 @@ function ReportCard({
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          {r.status === "ready" && <DownloadMenu reportId={r.id} />}
+          {r.status === "ready" && <DownloadMenu href={`/api/reports/${r.id}/csv`} />}
           {canManage && ACTIVE.has(r.status) && (
             <button className="btn-ghost" disabled={pending} onClick={() => run(() => cancelReport(r.id))} title="Cancel">
               <XCircle className="size-4" />
@@ -238,7 +400,7 @@ function Metric({ label, value, className = "", hint }: { label: string; value: 
   );
 }
 
-function DownloadMenu({ reportId }: { reportId: string }) {
+function DownloadMenu({ href }: { href: string }) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -260,7 +422,7 @@ function DownloadMenu({ reportId }: { reportId: string }) {
           {(Object.keys(CSV_VARIANTS) as CsvVariant[]).map((v) => (
             <a
               key={v}
-              href={`/api/reports/${reportId}/csv?variant=${v}`}
+              href={`${href}?variant=${v}`}
               className="block rounded-md px-3 py-2 text-sm text-slate-700 hover:bg-slate-50"
               onClick={() => setOpen(false)}
             >
