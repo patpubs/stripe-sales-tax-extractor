@@ -291,7 +291,10 @@ async function queueReports(opts: {
     groupId = group.id;
   }
 
-  const { error } = await db.from("reports").insert(rows.map((r) => ({ ...r, group_id: groupId })));
+  // In a group the schedule link lives on the group (see the combined_reports migration).
+  const { error } = await db
+    .from("reports")
+    .insert(rows.map((r) => ({ ...r, group_id: groupId, schedule_id: groupId ? null : r.schedule_id })));
   if (error) {
     if (groupId) await db.from("report_groups").delete().eq("id", groupId);
     return { error: error.message };

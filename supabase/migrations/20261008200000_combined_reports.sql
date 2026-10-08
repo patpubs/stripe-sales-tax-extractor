@@ -22,17 +22,16 @@ create index reports_group_idx on public.reports (group_id) where group_id is no
 alter table public.downloads
   add column group_id uuid references public.report_groups (id) on delete set null;
 
--- Schedules can cover several accounts.
-alter table public.report_schedules add column stripe_account_ids uuid[];
-update public.report_schedules set stripe_account_ids = array[stripe_account_id];
+-- Schedules can cover several accounts. stripe_account_id is kept (nullable,
+-- unused) so this migration stays additive.
 alter table public.report_schedules
-  alter column stripe_account_ids set not null,
+  add column stripe_account_ids uuid[] not null,
+  alter column stripe_account_id drop not null,
   add constraint report_schedules_accounts_nonempty check (cardinality(stripe_account_ids) > 0);
-alter table public.report_schedules drop column stripe_account_id;
 
-drop index public.reports_schedule_period_idx;
-create unique index reports_schedule_period_idx
-  on public.reports (schedule_id, stripe_account_id, period_start) where schedule_id is not null;
+-- A scheduled combined run sets schedule_id on its group, not on the
+-- per-account reports, so reports_schedule_period_idx still means "one report
+-- per single-account schedule per month".
 
 create or replace function public.enqueue_due_schedules()
 returns integer
@@ -92,10 +91,10 @@ begin
            (month_start - interval '1 month') at time zone a.timezone,
            month_start at time zone a.timezone,
            to_char(month_start - interval '1 month', 'FMMonth YYYY'),
-           a.timezone, s.created_by, s.id, g
+           a.timezone, s.created_by, case when g is null then s.id end, g
     from public.stripe_accounts a
     where a.id = any (s.stripe_account_ids) and not a.archived
-    on conflict (schedule_id, stripe_account_id, period_start) where schedule_id is not null do nothing;
+    on conflict (schedule_id, period_start) where schedule_id is not null do nothing;
 
     update public.report_schedules
     set last_period_start = p_start, last_run_at = now()
