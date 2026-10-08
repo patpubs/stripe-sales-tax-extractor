@@ -50,7 +50,10 @@ after 8 errors and can be resumed from where it stopped.
    `supabase db push`). In Authentication → Sign In / Providers, turn **off**
    "Allow new users to sign up".
 2. **Vercel**: import this repo and set the variables from `.env.example`:
-   - `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`
+   - Supabase keys: easiest is Supabase → Organization → Integrations → Vercel →
+     add a project connection, which syncs `SUPABASE_SERVICE_ROLE_KEY` /
+     `SUPABASE_SECRET_KEY` and the publishable key automatically. Otherwise set
+     `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY` by hand.
    - `STRIPE_KEY_ENCRYPTION_KEY`: any random string of 32+ characters (or `openssl rand -base64 32`)
    - `CRON_SECRET`: another random string of 32+ characters
    - `SUPER_ADMIN_EMAIL`: the only email allowed to create the first account
