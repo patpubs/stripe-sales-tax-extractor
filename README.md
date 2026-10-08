@@ -54,6 +54,21 @@ queues a report for the previous full month (in the account's timezone) once
 the day arrives, at most once per month per schedule. The worker then runs it
 like any other report.
 
+**Oklahoma import file.** State filings → Oklahoma turns any finished Oklahoma
+report (one account or combined) into the Tax Commission's COPO import,
+`OK-SalesTax-{Mon}{Year}-Import.csv` with `Copo,CoPoNetTaxSales` rows. Each sale's
+net (gross minus refunds) goes to its city's COPO and again to its county's xx88
+code. The file is computed when you open or download it, so a scheduled
+Oklahoma report is ready to download as soon as it finishes. Lookup tables live
+in `ok_*` tables: the base COPO template, city and alias codes, zip to county,
+county codes, and unincorporated towns. Mapping order: exact city or saved
+spelling; known town (county only); likely typo (used, flagged to approve or
+reject); county from the zip (county only, flagged); otherwise left out and
+flagged. Approving a typo or putting a town in a county saves it for future
+months; rejecting a match, leaving a sale out or keeping county-only applies to
+that month only (`filing_overrides`). The page checks city-level + county-only +
+unmapped + left-out equals the month's net.
+
 ## Setup
 
 1. **Supabase**: create a project, then run
@@ -86,5 +101,5 @@ like any other report.
 npm install
 cp .env.example .env.local   # fill in
 npm run dev
-npm test                      # unit tests (periods, state matching, CSV)
+npm test                      # unit tests (periods, state matching, CSV, Oklahoma COPO)
 ```

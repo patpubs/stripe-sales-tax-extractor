@@ -34,13 +34,20 @@ export default async function DownloadsPage() {
 
   // A download is of one report or of a combined report (group).
   const view = rows.map((d) => {
+    const okFile = d.variant === "ok_copo";
+    const source = d.group_id ? `g-${d.group_id}` : `r-${d.report_id}`;
     if (d.report_groups) {
       const g = d.report_groups;
       return {
         ...d,
         title: `${stateName(g.state)} — ${g.period_label}`,
         accounts: `Combined: ${g.reports.map((r) => r.stripe_accounts?.name).filter(Boolean).sort().join(" + ")}`,
-        again: g.reports.length > 0 && g.reports.every((r) => r.status === "ready") ? `/api/report-groups/${d.group_id}/csv` : null,
+        again:
+          g.reports.length > 0 && g.reports.every((r) => r.status === "ready")
+            ? okFile
+              ? `/api/filings/oklahoma/${source}/csv`
+              : `/api/report-groups/${d.group_id}/csv?variant=${d.variant}`
+            : null,
       };
     }
     if (d.reports) {
@@ -48,7 +55,12 @@ export default async function DownloadsPage() {
         ...d,
         title: `${stateName(d.reports.state)} — ${d.reports.period_label}`,
         accounts: d.reports.stripe_accounts?.name ?? "",
-        again: d.reports.status === "ready" ? `/api/reports/${d.report_id}/csv` : null,
+        again:
+          d.reports.status === "ready"
+            ? okFile
+              ? `/api/filings/oklahoma/${source}/csv`
+              : `/api/reports/${d.report_id}/csv?variant=${d.variant}`
+            : null,
       };
     }
     return { ...d, title: null, accounts: "", again: null };
@@ -88,12 +100,12 @@ export default async function DownloadsPage() {
                     <span className="text-slate-400">{d.filename} (report deleted)</span>
                   )}
                 </td>
-                <td className="px-5 py-3">{isCsvVariant(d.variant) ? CSV_VARIANTS[d.variant].short : d.variant}</td>
+                <td className="px-5 py-3">{isCsvVariant(d.variant) ? CSV_VARIANTS[d.variant].short : d.variant === "ok_copo" ? "Oklahoma import" : d.variant}</td>
                 <td className="px-5 py-3">{d.row_count?.toLocaleString() ?? "—"}</td>
                 <td className="px-5 py-3">{d.profiles?.full_name || d.profiles?.email || "—"}</td>
                 <td className="px-5 py-3 text-right">
                   {d.again && (
-                    <a className="btn-secondary py-1.5" href={`${d.again}?variant=${d.variant}`}>
+                    <a className="btn-secondary py-1.5" href={d.again}>
                       <Download className="size-4" /> Again
                     </a>
                   )}
