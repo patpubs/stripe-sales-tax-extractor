@@ -1,6 +1,6 @@
 import "server-only";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { buildFiling, countyKey, emptyOverrides, type OkFiling, type OkOverrides, type OkSale, type OkTables } from "./copo";
+import { buildFiling, COUNTY_COPOS, countyKey, emptyOverrides, type OkFiling, type OkOverrides, type OkSale, type OkTables } from "./copo";
 
 const PAGE = 1000;
 type Db = ReturnType<typeof createAdminClient>;
@@ -17,16 +17,15 @@ async function all<T>(db: Db, table: string, columns: string): Promise<T[]> {
 }
 
 export async function loadTables(db: Db = createAdminClient()): Promise<OkTables> {
-  const [copos, counties, cities, zips, towns] = await Promise.all([
+  const [copos, cities, zips, towns] = await Promise.all([
     all<{ code: string }>(db, "ok_copos", "code"),
-    all<{ name: string; copo: string }>(db, "ok_counties", "name, copo"),
     all<{ city: string; copos: string[] }>(db, "ok_city_copos", "city, copos"),
     all<{ zip: string; county: string }>(db, "ok_zip_counties", "zip, county"),
     all<{ town: string; county: string }>(db, "ok_town_counties", "town, county"),
   ]);
   return {
     copos: new Set(copos.map((r) => r.code)),
-    counties: new Map(counties.map((r) => [countyKey(r.name), r.copo])),
+    counties: COUNTY_COPOS,
     cities: new Map(cities.map((r) => [r.city, r.copos])),
     zips: new Map(zips.map((r) => [r.zip, countyKey(r.county)])),
     towns: new Map(towns.map((r) => [r.town, countyKey(r.county)])),
@@ -184,13 +183,12 @@ export async function tableCounts() {
     if (error) throw error;
     return n ?? 0;
   };
-  const [copos, counties, cities, aliases, zips, towns] = await Promise.all([
+  const [copos, cities, aliases, zips, towns] = await Promise.all([
     count("ok_copos"),
-    count("ok_counties"),
     count("ok_city_copos", false),
     count("ok_city_copos", true),
     count("ok_zip_counties"),
     count("ok_town_counties"),
   ]);
-  return { copos, counties, cities, aliases, zips, towns };
+  return { copos, cities, aliases, zips, towns };
 }

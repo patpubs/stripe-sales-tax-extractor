@@ -1,5 +1,5 @@
 import { cleanCity, cleanZip, countyKey } from "./clean.ts";
-import { normalizeCopo } from "./copo.ts";
+import { COUNTY_COPOS, normalizeCopo } from "./copo.ts";
 
 /** Minimal CSV parser (quoted fields, doubled quotes, CRLF). */
 export function parseCsv(text: string): string[][] {
@@ -58,7 +58,6 @@ export function parseBaseCopos(text: string): { code: string; name: string | nul
 export type TablesImport = {
   cities: { city: string; copos: string[] }[];
   zips: { zip: string; county: string }[];
-  counties: { name: string; copo: string }[];
   towns: { town: string; county: string }[];
   copos: { code: string; name: string | null }[];
   problems: string[];
@@ -70,7 +69,7 @@ export type TablesImport = {
  * optionally valid_copos. Any subset may be given.
  */
 export function parseTablesJson(text: string): TablesImport {
-  const out: TablesImport = { cities: [], zips: [], counties: [], towns: [], copos: [], problems: [] };
+  const out: TablesImport = { cities: [], zips: [], towns: [], copos: [], problems: [] };
   let json: Record<string, unknown>;
   try {
     json = JSON.parse(text);
@@ -78,6 +77,7 @@ export function parseTablesJson(text: string): TablesImport {
     out.problems.push(`Not valid JSON: ${(err as Error).message}`);
     return out;
   }
+  const knownCounty = (county: string) => COUNTY_COPOS.has(countyKey(county));
   const obj = (k: string) => (json[k] && typeof json[k] === "object" ? (json[k] as Record<string, unknown>) : {});
 
   for (const [rawCity, v] of Object.entries(obj("city_copo"))) {
@@ -88,17 +88,19 @@ export function parseTablesJson(text: string): TablesImport {
   }
   for (const [rawZip, county] of Object.entries(obj("zip_county_map"))) {
     const zip = cleanZip(rawZip);
-    if (zip.length !== 5 || typeof county !== "string" || !county.trim()) out.problems.push(`zip_county_map "${rawZip}"`);
+    if (zip.length !== 5 || typeof county !== "string" || !knownCounty(county)) out.problems.push(`zip_county_map "${rawZip}": ${JSON.stringify(county)}`);
     else out.zips.push({ zip, county: countyKey(county) });
   }
+  // County codes are fixed (COUNTY_COPOS); a table that disagrees is reported, not loaded.
   for (const [name, v] of Object.entries(obj("county_copo"))) {
-    const copo = normalizeCopo(v);
-    if (!copo || !copo.endsWith("88")) out.problems.push(`county_copo "${name}": ${JSON.stringify(v)}`);
-    else out.counties.push({ name: countyKey(name), copo });
+    const want = COUNTY_COPOS.get(countyKey(name));
+    if (!want) out.problems.push(`county_copo "${name}" isn't an Oklahoma county`);
+    else if (normalizeCopo(v) !== want) out.problems.push(`county_copo ${name} is ${JSON.stringify(v)} but its code is ${want}`);
   }
+
   for (const [rawTown, county] of Object.entries(obj("city_to_county_fallback"))) {
     const town = cleanCity(rawTown);
-    if (!town || typeof county !== "string" || !county.trim()) out.problems.push(`city_to_county_fallback "${rawTown}"`);
+    if (!town || typeof county !== "string" || !knownCounty(county)) out.problems.push(`city_to_county_fallback "${rawTown}": ${JSON.stringify(county)}`);
     else out.towns.push({ town, county: countyKey(county) });
   }
   const valid = Array.isArray(json.valid_copos) ? json.valid_copos : [];
@@ -111,7 +113,6 @@ export function parseTablesJson(text: string): TablesImport {
   const dedupe = <T,>(rows: T[], key: (r: T) => string) => [...new Map(rows.map((r) => [key(r), r])).values()];
   out.cities = dedupe(out.cities, (r) => r.city);
   out.zips = dedupe(out.zips, (r) => r.zip);
-  out.counties = dedupe(out.counties, (r) => r.name);
   out.towns = dedupe(out.towns, (r) => r.town);
   out.copos = dedupe(out.copos, (r) => r.code);
   return out;

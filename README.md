@@ -61,7 +61,9 @@ net (gross minus refunds) goes to its city's COPO and again to its county's xx88
 code. The file is computed when you open or download it, so a scheduled
 Oklahoma report is ready to download as soon as it finishes. Lookup tables live
 in `ok_*` tables: the base COPO template, city and alias codes, zip to county,
-county codes, and unincorporated towns. Mapping order: exact city or saved
+and unincorporated towns. County codes are fixed in code (counties are numbered
+alphabetically, Adair 0188 to Woodward 7788). Codes not in the base template are
+never written. Mapping order: exact city or saved
 spelling; known town (county only); likely typo (used, flagged to approve or
 reject); county from the zip (county only, flagged); otherwise left out and
 flagged. Approving a typo or putting a town in a county saves it for future

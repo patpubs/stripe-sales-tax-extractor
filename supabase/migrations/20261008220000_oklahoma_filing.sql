@@ -8,12 +8,6 @@ create table public.ok_copos (
   name text
 );
 
--- County (lowercase, without "county") -> xx88 code.
-create table public.ok_counties (
-  name text primary key,
-  copo text not null check (copo ~ '^\d{2}88$')
-);
-
 -- Cleaned city name -> COPO codes. Multi-county cities have several; aliases
 -- are typos and variants saved when an operator confirms them.
 create table public.ok_city_copos (
@@ -56,13 +50,12 @@ create unique index filing_overrides_unique
   on public.filing_overrides (state, coalesce(report_id, group_id), kind, value);
 
 alter table public.ok_copos enable row level security;
-alter table public.ok_counties enable row level security;
 alter table public.ok_city_copos enable row level security;
 alter table public.ok_zip_counties enable row level security;
 alter table public.ok_town_counties enable row level security;
 alter table public.filing_overrides enable row level security;
 
-revoke all on public.ok_copos, public.ok_counties, public.ok_city_copos, public.ok_zip_counties,
+revoke all on public.ok_copos, public.ok_city_copos, public.ok_zip_counties,
   public.ok_town_counties, public.filing_overrides from anon, authenticated;
-grant all on public.ok_copos, public.ok_counties, public.ok_city_copos, public.ok_zip_counties,
+grant all on public.ok_copos, public.ok_city_copos, public.ok_zip_counties,
   public.ok_town_counties, public.filing_overrides to service_role;

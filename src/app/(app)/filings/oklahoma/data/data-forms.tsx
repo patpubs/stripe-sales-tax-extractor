@@ -25,8 +25,9 @@ export function TablesUpload() {
       <section className="card">
         <h2 className="text-lg font-semibold">Lookup tables (JSON)</h2>
         <p className="mt-1 text-sm text-slate-500">
-          An object with any of <code>city_copo</code>, <code>zip_county_map</code>, <code>county_copo</code>,{" "}
-          <code>city_to_county_fallback</code> and <code>valid_copos</code>. Entries are added or updated; nothing is removed.
+          An object with any of <code>city_copo</code>, <code>zip_county_map</code>, <code>city_to_county_fallback</code>{" "}
+          and <code>valid_copos</code>. Entries are added or updated; nothing is removed. County codes are fixed by the
+          Tax Commission&apos;s numbering, so <code>county_copo</code> is only checked.
         </p>
         <form action={tablesAction} className="mt-4 space-y-3">
           <input type="file" name="file" accept=".json,application/json" className="block text-sm" required />

@@ -2,7 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { requireUser } from "@/lib/auth";
 import { computeFiling, getSource, loadTables } from "@/lib/filings/oklahoma/data";
-import { importFilename } from "@/lib/filings/oklahoma/copo";
+import { importFilename, OK_COUNTIES } from "@/lib/filings/oklahoma/copo";
 import { FilingReview } from "./filing-review";
 
 export default async function OklahomaFilingPage({ params }: { params: Promise<{ source: string }> }) {
@@ -32,7 +32,7 @@ export default async function OklahomaFilingPage({ params }: { params: Promise<{
       filename={importFilename(source.periodLabel)}
       filing={filing}
       cities={[...tables.cities.keys()].sort()}
-      counties={[...tables.counties.keys()].sort()}
+      counties={OK_COUNTIES.map((c) => c.toLowerCase())}
     />
   );
 }

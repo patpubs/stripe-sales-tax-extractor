@@ -5,6 +5,7 @@ import { requireSuperAdmin, requireUser } from "@/lib/auth";
 import { createAdminClient } from "@/lib/supabase/admin";
 import type { ActionResult } from "@/app/actions";
 import { cleanCity, countyKey } from "@/lib/filings/oklahoma/clean";
+import { COUNTY_COPOS } from "@/lib/filings/oklahoma/copo";
 import { getSource, overrideTarget } from "@/lib/filings/oklahoma/data";
 import { parseBaseCopos, parseTablesJson } from "@/lib/filings/oklahoma/upload";
 
@@ -37,12 +38,10 @@ export async function assignTown(raw: string, county: string): Promise<ActionRes
   const me = await requireUser();
   const town = cleanCity(raw);
   if (!town) return { ok: false, error: "There's no town name to save." };
-  const db = createAdminClient();
-  const { data: known } = await db.from("ok_counties").select("name").eq("name", countyKey(county)).maybeSingle();
-  if (!known) return { ok: false, error: "Pick a county." };
-  const { error } = await db
+  if (!COUNTY_COPOS.has(countyKey(county))) return { ok: false, error: "Pick a county." };
+  const { error } = await createAdminClient()
     .from("ok_town_counties")
-    .upsert({ town, county: known.name, created_by: me.id }, { onConflict: "town" });
+    .upsert({ town, county: countyKey(county), created_by: me.id }, { onConflict: "town" });
   if (error) return { ok: false, error: error.message };
   refresh();
   return { ok: true };
@@ -105,16 +104,15 @@ export async function uploadBaseCopos(_: ActionResult | null, fd: FormData): Pro
   }
 }
 
-/** Merge lookup tables from JSON (city_copo, zip_county_map, county_copo, city_to_county_fallback, valid_copos). */
+/** Merge lookup tables from JSON (city_copo, zip_county_map, city_to_county_fallback, valid_copos; county_copo is only checked). */
 export async function importTables(_: ActionResult | null, fd: FormData): Promise<ActionResult> {
   const me = await requireSuperAdmin();
   try {
     const text = await fileText(fd);
     if (!text) return { ok: false, error: "Choose the JSON file." };
     const t = parseTablesJson(text);
-    const loaded = t.cities.length + t.zips.length + t.counties.length + t.towns.length + t.copos.length;
+    const loaded = t.cities.length + t.zips.length + t.towns.length + t.copos.length;
     if (!loaded) return { ok: false, error: t.problems[0] ?? "Nothing recognizable in that file." };
-    await upsertAll("ok_counties", t.counties, "name");
     await upsertAll("ok_city_copos", t.cities.map((r) => ({ ...r, created_by: me.id })), "city");
     await upsertAll("ok_zip_counties", t.zips, "zip");
     await upsertAll("ok_town_counties", t.towns.map((r) => ({ ...r, created_by: me.id })), "town");
@@ -123,7 +121,6 @@ export async function importTables(_: ActionResult | null, fd: FormData): Promis
     const parts = [
       `${t.cities.length} cities`,
       `${t.zips.length} zips`,
-      `${t.counties.length} counties`,
       `${t.towns.length} towns`,
       ...(t.copos.length ? [`${t.copos.length} COPO codes`] : []),
     ];

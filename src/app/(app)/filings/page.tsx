@@ -22,7 +22,6 @@ export default async function FilingsPage() {
   const missing = [
     !counts.copos && "base COPO template",
     !counts.cities && "city codes",
-    !counts.counties && "county codes",
     !counts.zips && "zip codes",
   ].filter(Boolean);
   const quarter = newQuarter();

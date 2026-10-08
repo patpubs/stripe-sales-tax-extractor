@@ -6,11 +6,36 @@ import { cleanCity, cleanZip, closestCities, countyKey } from "./clean.ts";
  * portal imports a two-column CSV of totals per code.
  */
 
+/**
+ * Oklahoma's 77 counties in Tax Commission order: alphabetical, so county n's
+ * code is n padded to two digits plus 88 (Adair 0188 ... Woodward 7788). Fixed
+ * here rather than loaded, so a bad table can't move a county's tax.
+ */
+export const OK_COUNTIES = [
+  "Adair", "Alfalfa", "Atoka", "Beaver", "Beckham", "Blaine", "Bryan", "Caddo", "Canadian", "Carter",
+  "Cherokee", "Choctaw", "Cimarron", "Cleveland", "Coal", "Comanche", "Cotton", "Craig", "Creek", "Custer",
+  "Delaware", "Dewey", "Ellis", "Garfield", "Garvin", "Grady", "Grant", "Greer", "Harmon", "Harper",
+  "Haskell", "Hughes", "Jackson", "Jefferson", "Johnston", "Kay", "Kingfisher", "Kiowa", "Latimer", "Le Flore",
+  "Lincoln", "Logan", "Love", "McClain", "McCurtain", "McIntosh", "Major", "Marshall", "Mayes", "Murray",
+  "Muskogee", "Noble", "Nowata", "Okfuskee", "Oklahoma", "Okmulgee", "Osage", "Ottawa", "Pawnee", "Payne",
+  "Pittsburg", "Pontotoc", "Pottawatomie", "Pushmataha", "Roger Mills", "Rogers", "Seminole", "Sequoyah", "Stephens", "Texas",
+  "Tillman", "Tulsa", "Wagoner", "Washington", "Washita", "Woods", "Woodward",
+] as const;
+
+/** County key -> xx88 code. "LeFlore" and "Le Flore" both work. */
+export const COUNTY_COPOS: ReadonlyMap<string, string> = new Map(
+  OK_COUNTIES.flatMap((name, i) => {
+    const code = `${String(i + 1).padStart(2, "0")}88`;
+    const key = countyKey(name);
+    return key.includes(" ") ? [[key, code], [key.replace(/ /g, ""), code]] : [[key, code]];
+  }),
+);
+
 export type OkTables = {
   /** Every COPO code the portal accepts (the base template). Empty = not loaded, skip validation. */
   copos: Set<string>;
-  /** County key -> xx88 code. */
-  counties: Map<string, string>;
+  /** County key -> xx88 code (COUNTY_COPOS). */
+  counties: ReadonlyMap<string, string>;
   /** Cleaned city name or alias -> one or more COPO codes (several for multi-county cities). */
   cities: Map<string, string[]>;
   /** 5-digit zip -> county key. */

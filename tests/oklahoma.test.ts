@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { cleanCity, cleanZip, similarity } from "../src/lib/filings/oklahoma/clean.ts";
-import { buildFiling, emptyOverrides, importCsv, importFilename, normalizeCopo, type OkSale, type OkTables } from "../src/lib/filings/oklahoma/copo.ts";
+import { buildFiling, COUNTY_COPOS, emptyOverrides, importCsv, importFilename, normalizeCopo, type OkSale, type OkTables } from "../src/lib/filings/oklahoma/copo.ts";
 
 test("city cleaning", () => {
   const cases: [string, string][] = [
@@ -43,7 +43,7 @@ test("fuzzy similarity ranks typos high", () => {
 // Small fixture in the shape of the real tables.
 const tables: OkTables = {
   copos: new Set(["0921", "0988", "1411", "1421", "1488", "5521", "5588", "0801", "0888", "6201", "6288", "6488"]),
-  counties: new Map([["canadian", "0988"], ["cleveland", "1488"], ["oklahoma", "5588"], ["caddo", "0888"], ["pontotoc", "6288"], ["pushmataha", "6488"]]),
+  counties: COUNTY_COPOS,
   cities: new Map([
     ["oklahoma city", ["5521", "0921", "1421"]],
     ["norman", ["1411"]],
@@ -140,14 +140,26 @@ test("lookup tables JSON import", () => {
   const t = parseTablesJson(JSON.stringify({
     city_copo: { "Oklahoma City": ["5521", "921"], ada: "6201", bad: ["x"] },
     zip_county_map: { "73160": "Cleveland County", "12": "x" },
-    county_copo: { Oklahoma: "5588", Bad: "5521" },
+    county_copo: { Oklahoma: "5588", Canadian: "1088", Nowhere: "9988" },
     city_to_county_fallback: { Newalla: "Oklahoma" },
     valid_copos: ["5521", 921],
   }));
   assert.deepEqual(t.cities, [{ city: "oklahoma city", copos: ["5521", "0921"] }, { city: "ada", copos: ["6201"] }]);
   assert.deepEqual(t.zips, [{ zip: "73160", county: "cleveland" }]);
-  assert.deepEqual(t.counties, [{ name: "oklahoma", copo: "5588" }]);
+  assert.ok(t.problems.some((p) => p.includes("Canadian") && p.includes("0988")));
   assert.deepEqual(t.towns, [{ town: "newalla", county: "oklahoma" }]);
   assert.deepEqual(t.copos.map((c) => c.code), ["5521", "0921"]);
-  assert.equal(t.problems.length, 3);
+  assert.equal(t.problems.length, 4);
+});
+
+test("county codes follow the Tax Commission's alphabetical numbering", () => {
+  assert.equal(COUNTY_COPOS.size, 79); // 77 plus no-space spellings of Le Flore and Roger Mills
+  assert.equal(COUNTY_COPOS.get("adair"), "0188");
+  assert.equal(COUNTY_COPOS.get("cleveland"), "1488");
+  assert.equal(COUNTY_COPOS.get("leflore"), "4088");
+  assert.equal(COUNTY_COPOS.get("oklahoma"), "5588");
+  assert.equal(COUNTY_COPOS.get("pottawatomie"), "6388");
+  assert.equal(COUNTY_COPOS.get("tulsa"), "7288");
+  assert.equal(COUNTY_COPOS.get("wagoner"), "7388");
+  assert.equal(COUNTY_COPOS.get("woodward"), "7788");
 });
