@@ -2,17 +2,24 @@ import Link from "next/link";
 import { requireUser } from "@/lib/auth";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { tableCounts } from "@/lib/filings/oklahoma/data";
-import { DeleteEntry, TablesUpload } from "./data-forms";
+import { lastChartImports } from "@/lib/filings/oklahoma/chart-import";
+import { chartUrl, quarterOf } from "@/lib/filings/oklahoma/rate-chart";
+import { dateTime } from "@/lib/format";
+import { CheckChartButton, DeleteEntry, TablesUpload } from "./data-forms";
 
 export default async function OklahomaDataPage() {
   const user = await requireUser();
   const isAdmin = user.role === "super_admin";
   const db = createAdminClient();
-  const [counts, aliases, towns] = await Promise.all([
+  const quarter = quarterOf();
+  const [counts, aliases, towns, imports, effective] = await Promise.all([
     tableCounts(),
     db.from("ok_city_copos").select("city, copos, created_at, profiles:created_by(full_name, email)").eq("alias", true).order("city").limit(1000),
     db.from("ok_town_counties").select("town, county, created_at, profiles:created_by(full_name, email)").order("town").limit(1000),
+    lastChartImports(),
+    db.from("ok_rate_chart").select("effective").order("effective", { ascending: false }).limit(1).maybeSingle(),
   ]);
+  const chartQuarter = effective.data?.effective ?? null;
   type Who = { profiles: { full_name: string | null; email: string } | null };
   const who = (r: Who) => r.profiles?.full_name || r.profiles?.email || "imported";
 
@@ -47,6 +54,29 @@ export default async function OklahomaDataPage() {
             </div>
           ))}
         </dl>
+      </section>
+
+      <section className="card">
+        <h2 className="text-lg font-semibold">Rate chart</h2>
+        <p className="mt-1 text-sm text-slate-600">
+          {chartQuarter ? `Loaded: ${chartQuarter}.` : "No rate chart loaded yet."}{" "}
+          {chartQuarter === quarter.label
+            ? "That's the current quarter."
+            : `The app checks daily for the ${quarter.label} chart and loads it once the Tax Commission publishes it.`}{" "}
+          <a href={chartUrl(quarter.year, quarter.q)} target="_blank" rel="noreferrer" className="text-blue-600 hover:underline">
+            {quarter.label} chart
+          </a>
+        </p>
+        {imports.length > 0 && (
+          <ul className="mt-3 space-y-1 text-xs text-slate-500">
+            {imports.map((i) => (
+              <li key={i.created_at} className={i.status === "failed" ? "text-red-700" : ""}>
+                {dateTime(i.created_at)} · {i.message}
+              </li>
+            ))}
+          </ul>
+        )}
+        {isAdmin && <div className="mt-4"><CheckChartButton /></div>}
       </section>
 
       {isAdmin && <TablesUpload />}

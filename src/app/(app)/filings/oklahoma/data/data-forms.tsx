@@ -3,7 +3,8 @@ import { useActionState, useTransition } from "react";
 import { Trash2 } from "lucide-react";
 import { FormMessage } from "@/components/form-message";
 import { SubmitButton } from "@/components/submit-button";
-import { deleteAlias, deleteTown, importTables, uploadBaseCopos } from "../actions";
+import { checkRateChart, deleteAlias, deleteTown, importTables, uploadBaseCopos } from "../actions";
+import type { ActionResult } from "@/app/actions";
 
 export function TablesUpload() {
   const [baseState, baseAction] = useActionState(uploadBaseCopos, null);
@@ -54,5 +55,15 @@ export function DeleteEntry({ kind, value }: { kind: "alias" | "town"; value: st
     >
       <Trash2 className="size-4" />
     </button>
+  );
+}
+
+export function CheckChartButton() {
+  const [state, action] = useActionState<ActionResult | null>(() => checkRateChart(), null);
+  return (
+    <form action={action} className="space-y-3">
+      <SubmitButton className="btn-secondary">Check for this quarter&apos;s chart now</SubmitButton>
+      <FormMessage state={state} />
+    </form>
   );
 }

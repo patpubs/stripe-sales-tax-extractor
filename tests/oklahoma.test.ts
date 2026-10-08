@@ -172,3 +172,39 @@ test("no county row where the rate chart says no county tax", () => {
   assert.equal(f.countyOnlyTotal, 70);
   assert.ok(f.balanced);
 });
+
+import { chartProblems, chartUrl, parseChartLines, quarterOf } from "../src/lib/filings/oklahoma/rate-chart.ts";
+
+test("rate chart URL and quarter", () => {
+  assert.equal(chartUrl(2026, 4), "https://oklahoma.gov/content/dam/ok/en/tax/documents/resources/publications/businesses/sales-and-use-tax/rate-charts-copos/2026/copo4Q26.pdf");
+  assert.equal(quarterOf(new Date("2026-10-01T12:00:00Z")).label, "2026-Q4");
+  assert.equal(quarterOf(new Date("2027-01-01T03:00:00Z")).label, "2026-Q4"); // still Dec 31 in Oklahoma
+});
+
+test("rate chart line parsing", () => {
+  const chart = parseChartLines(
+    [
+      "0588   BECKHAM CTY #       0.35%       4508        Broken Bow                     0% to 5%                 Lodging",
+      "5588   OKLAHOMA CTY            0%",
+      "0703   ACHILLE **                    3%          6704    BOWLEGS **             3%                 4904    CHOUTEAU # **              4.50%",
+      "5521   OKLAHOMA CITY #    4.125%   0921   OKLAHOMA CITY # ** 4.125%   5313   SOUTH COFFEYVILLE # **3.5%",
+      "4524   HOCHATOWN #**          3%   2152   WESTSILOAM SPR # ** 4.75%",
+    ],
+    "2026-Q4",
+  );
+  assert.deepEqual(chart.counties.map((c) => [c.code, c.name, c.rate]), [["0588", "BECKHAM", 0.35], ["5588", "OKLAHOMA", 0]]);
+  assert.deepEqual(
+    chart.cities.map((c) => [c.code, c.name, c.rate, c.countyTax]),
+    [
+      ["0703", "ACHILLE", 3, true],
+      ["6704", "BOWLEGS", 3, true],
+      ["4904", "CHOUTEAU", 4.5, true],
+      ["5521", "OKLAHOMA CITY", 4.125, false],
+      ["0921", "OKLAHOMA CITY", 4.125, true],
+      ["5313", "SOUTH COFFEYVILLE", 3.5, true],
+      ["4524", "HOCHATOWN", 3, true],
+      ["2152", "WESTSILOAM SPR", 4.75, true],
+    ],
+  );
+  assert.ok(chartProblems(chart).some((p) => p.includes("Adair County")));
+});

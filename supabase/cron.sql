@@ -38,3 +38,21 @@ select cron.schedule(
   '*/15 * * * *',
   $$ select public.enqueue_due_schedules(); $$
 );
+
+-- Load each quarter's Oklahoma rate chart from the Tax Commission. Runs daily;
+-- it does nothing once the current quarter's chart is in.
+select cron.schedule(
+  'oklahoma-rate-chart',
+  '17 11 * * *',
+  $$
+  select net.http_post(
+    url := replace((select decrypted_secret from vault.decrypted_secrets where name = 'worker_url'), '/api/worker', '/api/filings/oklahoma/rate-chart'),
+    headers := jsonb_build_object(
+      'Authorization', 'Bearer ' || (select decrypted_secret from vault.decrypted_secrets where name = 'worker_cron_secret'),
+      'Content-Type', 'application/json'
+    ),
+    body := '{}'::jsonb,
+    timeout_milliseconds := 60000
+  );
+  $$
+);

@@ -25,7 +25,9 @@ export async function loadTables(db: Db = createAdminClient()): Promise<OkTables
     all<{ code: string; rate: number; county_tax: boolean }>(db, "ok_rate_chart", "code, rate, county_tax"),
   ]);
   return {
-    copos: new Set(copos.map((r) => r.code)),
+    // The portal's base template can lag the rate chart (a city that just
+    // started a tax), so a code on either one is accepted.
+    copos: new Set([...copos.map((r) => r.code), ...chart.map((r) => r.code)]),
     counties: COUNTY_COPOS,
     cities: new Map(cities.map((r) => [r.city, r.copos])),
     zips: new Map(zips.map((r) => [r.zip, countyKey(r.county)])),

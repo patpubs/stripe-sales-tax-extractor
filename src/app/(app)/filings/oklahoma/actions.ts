@@ -7,6 +7,7 @@ import type { ActionResult } from "@/app/actions";
 import { cleanCity, countyKey } from "@/lib/filings/oklahoma/clean";
 import { COUNTY_COPOS } from "@/lib/filings/oklahoma/copo";
 import { getSource, overrideTarget } from "@/lib/filings/oklahoma/data";
+import { refreshRateChart } from "@/lib/filings/oklahoma/chart-import";
 import { parseBaseCopos, parseTablesJson } from "@/lib/filings/oklahoma/upload";
 
 const CHUNK = 500;
@@ -143,4 +144,12 @@ export async function deleteTown(town: string): Promise<ActionResult> {
   await createAdminClient().from("ok_town_counties").delete().eq("town", town);
   refresh();
   return { ok: true };
+}
+
+/** Fetch this quarter's rate chart from the Tax Commission now. */
+export async function checkRateChart(): Promise<ActionResult> {
+  const me = await requireSuperAdmin();
+  const r = await refreshRateChart({ force: true, userId: me.id });
+  refresh();
+  return r.status === "loaded" || r.status === "current" ? { ok: true, message: r.message } : { ok: false, error: r.message };
 }

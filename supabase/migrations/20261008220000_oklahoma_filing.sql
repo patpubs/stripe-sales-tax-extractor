@@ -19,6 +19,17 @@ create table public.ok_rate_chart (
   effective text not null
 );
 
+-- Each attempt to load a quarter's rate chart from the Tax Commission.
+create table public.ok_chart_imports (
+  id uuid primary key default gen_random_uuid(),
+  quarter text not null,
+  url text not null,
+  status text not null check (status in ('loaded', 'not_published', 'failed', 'current')),
+  message text,
+  created_by uuid references public.profiles (id) on delete set null,
+  created_at timestamptz not null default now()
+);
+
 -- Cleaned city name -> COPO codes. Multi-county cities have several; aliases
 -- are typos and variants saved when an operator confirms them.
 create table public.ok_city_copos (
@@ -62,12 +73,13 @@ create unique index filing_overrides_unique
 
 alter table public.ok_copos enable row level security;
 alter table public.ok_rate_chart enable row level security;
+alter table public.ok_chart_imports enable row level security;
 alter table public.ok_city_copos enable row level security;
 alter table public.ok_zip_counties enable row level security;
 alter table public.ok_town_counties enable row level security;
 alter table public.filing_overrides enable row level security;
 
-revoke all on public.ok_copos, public.ok_rate_chart, public.ok_city_copos, public.ok_zip_counties,
+revoke all on public.ok_copos, public.ok_rate_chart, public.ok_chart_imports, public.ok_city_copos, public.ok_zip_counties,
   public.ok_town_counties, public.filing_overrides from anon, authenticated;
-grant all on public.ok_copos, public.ok_rate_chart, public.ok_city_copos, public.ok_zip_counties,
+grant all on public.ok_copos, public.ok_rate_chart, public.ok_chart_imports, public.ok_city_copos, public.ok_zip_counties,
   public.ok_town_counties, public.filing_overrides to service_role;
