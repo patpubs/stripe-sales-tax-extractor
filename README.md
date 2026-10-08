@@ -43,6 +43,12 @@ next run resumes from the cursor. Supabase `pg_cron` calls the worker every
 minute as a safety net. Transient Stripe errors are retried; a report fails
 after 8 errors and can be resumed from where it stopped.
 
+**Schedules.** A row in `report_schedules` names an account, a state and a day
+of the month. Every 15 minutes `pg_cron` runs `enqueue_due_schedules()`, which
+queues a report for the previous full month (in the account's timezone) once
+the day arrives, at most once per month per schedule. The worker then runs it
+like any other report.
+
 ## Setup
 
 1. **Supabase**: create a project, then run
