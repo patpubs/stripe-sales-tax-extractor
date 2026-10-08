@@ -54,6 +54,32 @@ queues a report for the previous full month (in the account's timezone) once
 the day arrives, at most once per month per schedule. The worker then runs it
 like any other report.
 
+**Oklahoma import file.** State filings → Oklahoma turns any finished Oklahoma
+report (one account or combined) into the Tax Commission's COPO import,
+`OK-SalesTax-{Mon}{Year}-Import.csv` with `Copo,CoPoNetTaxSales` rows. Each sale's
+net (gross minus refunds) goes to its city's COPO and again to its county's xx88
+code. The file is computed when you open or download it, so a scheduled
+Oklahoma report is ready to download as soon as it finishes. Lookup tables live
+in `ok_*` tables: the base COPO template, city and alias codes, zip to county,
+unincorporated towns, and the Tax Commission's rate chart (which city codes
+owe county tax too; Oklahoma County is 0%, so no 5588 row). The data loaded by
+`20261008230000_oklahoma_lookup_data.sql` comes from the rate chart for Q1 2026,
+the portal's base template, and the spellings, zips and towns from the old
+monthly process that agree with the chart. New quarters load themselves: pg_cron calls
+`/api/filings/oklahoma/rate-chart` daily, which downloads that quarter's chart
+from its usual oklahoma.gov address (`.../rate-charts-copos/2027/copo1Q27.pdf`)
+once it's published, checks it parses into all 77 counties and the expected
+cities, and updates codes and cities. A chart that doesn't parse cleanly is
+logged on the lookup tables page and nothing changes. County codes are fixed in code (counties are numbered
+alphabetically, Adair 0188 to Woodward 7788). Codes not in the base template are
+never written. Mapping order: exact city or saved
+spelling; known town (county only); likely typo (used, flagged to approve or
+reject); county from the zip (county only, flagged); otherwise left out and
+flagged. Approving a typo or putting a town in a county saves it for future
+months; rejecting a match, leaving a sale out or keeping county-only applies to
+that month only (`filing_overrides`). The page checks city-level + county-only +
+unmapped + left-out equals the month's net.
+
 ## Setup
 
 1. **Supabase**: create a project, then run
@@ -69,7 +95,8 @@ like any other report.
    - `CRON_SECRET`: another random string of 32+ characters
    - `SUPER_ADMIN_EMAIL`: the only email allowed to create the first account
    - `NEXT_PUBLIC_SITE_URL`: the production URL, e.g. `https://sales-tax.vercel.app`
-3. **Cron**: after the first deploy, edit and run `supabase/cron.sql`.
+3. **Cron**: after the first deploy, edit and run `supabase/cron.sql` (it also
+   schedules the daily Oklahoma rate chart check).
 4. **Supabase Auth URL**: in Authentication → URL Configuration, set Site URL to
    the production URL.
 5. Open the app. You'll be sent to `/setup` to create the super admin account
@@ -86,5 +113,5 @@ like any other report.
 npm install
 cp .env.example .env.local   # fill in
 npm run dev
-npm test                      # unit tests (periods, state matching, CSV)
+npm test                      # unit tests (periods, state matching, CSV, Oklahoma COPO)
 ```

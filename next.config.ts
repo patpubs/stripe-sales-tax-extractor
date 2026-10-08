@@ -1,7 +1,8 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  serverExternalPackages: ["stripe"],
+  // unpdf ships its own pdf.js build; load it from node_modules as is.
+  serverExternalPackages: ["stripe", "unpdf"],
 };
 
 export default nextConfig;

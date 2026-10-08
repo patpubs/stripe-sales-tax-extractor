@@ -12,6 +12,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   const links = [
     { href: "/", label: "Reports" },
     { href: "/schedules", label: "Schedules" },
+    { href: "/filings", label: "State filings" },
     { href: "/downloads", label: "Download history" },
     ...(user.role === "super_admin"
       ? [
