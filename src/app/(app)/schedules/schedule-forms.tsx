@@ -33,6 +33,13 @@ export function ScheduleForm({ accounts }: { accounts: AccountOption[] }) {
             </select>
           </div>
           <div>
+            <label className="label" htmlFor="frequency">Covers</label>
+            <select id="frequency" name="frequency" className="input" defaultValue="monthly">
+              <option value="monthly">Each month</option>
+              <option value="quarterly">Each quarter</option>
+            </select>
+          </div>
+          <div>
             <label className="label" htmlFor="day_of_month">Run on day</label>
             <select id="day_of_month" name="day_of_month" className="input" defaultValue={1}>
               {Array.from({ length: 28 }, (_, i) => i + 1).map((d) => (
@@ -42,11 +49,11 @@ export function ScheduleForm({ accounts }: { accounts: AccountOption[] }) {
           </div>
         </div>
         <label className="flex items-center gap-2 text-sm text-slate-700">
-          <input type="checkbox" name="run_now" className="size-4" /> Also run last month&apos;s report now
+          <input type="checkbox" name="run_now" className="size-4" /> Also run the last month or quarter now
         </label>
         <p className="text-xs text-slate-500">
-          Each run covers the previous full month in the account&apos;s timezone. Running on the 1st is fine; a later day
-          gives late refunds time to land.
+          Monthly schedules run every month for the previous full month. Quarterly schedules run in January, April, July
+          and October for the quarter that just ended (Q1 is Jan – Mar). Dates use the account&apos;s timezone.
         </p>
         <FormMessage state={state} />
         <SubmitButton className="btn-primary">Save schedule</SubmitButton>
@@ -59,6 +66,7 @@ type Schedule = {
   id: string;
   state: string;
   day_of_month: number;
+  frequency: "monthly" | "quarterly";
   enabled: boolean;
   account_names: string[];
   timezone: string;
@@ -77,7 +85,10 @@ export function ScheduleRow({ schedule: s, canManage }: { schedule: Schedule; ca
           {!s.enabled && <span className="badge border-slate-200 bg-slate-50 text-slate-500">Paused</span>}
         </div>
         <div className="mt-0.5 text-xs text-slate-500">
-          Runs on the {ordinal(s.day_of_month)} of each month for the previous month ({s.timezone})
+          {s.frequency === "quarterly"
+            ? `Runs on the ${ordinal(s.day_of_month)} of Jan, Apr, Jul and Oct for the previous quarter`
+            : `Runs on the ${ordinal(s.day_of_month)} of each month for the previous month`}{" "}
+          ({s.timezone})
           {s.last_run_label ? ` · last queued ${s.last_run_label}` : " · not run yet"}
           {s.created_by_name && ` · by ${s.created_by_name}`}
         </div>

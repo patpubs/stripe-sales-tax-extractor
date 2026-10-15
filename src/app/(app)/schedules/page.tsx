@@ -9,6 +9,7 @@ type ScheduleRecord = {
   id: string;
   state: string;
   day_of_month: number;
+  frequency: "monthly" | "quarterly";
   enabled: boolean;
   last_run_at: string | null;
   created_by: string | null;
@@ -23,7 +24,7 @@ export default async function SchedulesPage() {
     listAccountOptions(true),
     createAdminClient()
       .from("report_schedules")
-      .select("id, state, stripe_account_ids, day_of_month, enabled, last_run_at, created_by, profiles:created_by(full_name, email)")
+      .select("id, state, stripe_account_ids, day_of_month, frequency, enabled, last_run_at, created_by, profiles:created_by(full_name, email)")
       .order("created_at"),
   ]);
   if (error) throw error;
@@ -31,7 +32,7 @@ export default async function SchedulesPage() {
   return (
     <div className="space-y-6">
       <p className="text-slate-600">
-        Scheduled reports run automatically each month for the previous full month. Finished reports show up in{" "}
+        Scheduled reports run automatically for the previous full month or quarter. Finished reports show up in{" "}
         <Link href="/" className="text-blue-600 hover:underline">Report History</Link> like any other.
       </p>
 
@@ -48,6 +49,7 @@ export default async function SchedulesPage() {
                 id: s.id,
                 state: s.state,
                 day_of_month: s.day_of_month,
+                frequency: s.frequency,
                 enabled: s.enabled,
                 account_names: s.stripe_account_ids.map((id) => allAccounts.find((a) => a.id === id)?.name ?? "Deleted account"),
                 timezone: allAccounts.find((a) => a.id === s.stripe_account_ids[0])?.timezone ?? "",

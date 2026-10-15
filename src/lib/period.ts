@@ -43,6 +43,31 @@ export function monthPeriod(year: number, month: number, timeZone: string): Peri
   return { start, end, label: `${MONTHS[month - 1]} ${year}` };
 }
 
+/** Calendar quarter (Q1 = Jan–Mar), quarter is 1-4. */
+export function quarterPeriod(year: number, quarter: number, timeZone: string): Period {
+  if (!Number.isInteger(quarter) || quarter < 1 || quarter > 4) throw new Error("Pick a quarter.");
+  const first = (quarter - 1) * 3 + 1;
+  const start = localMidnightUtc(year, first, 1, timeZone);
+  const end = quarter === 4 ? localMidnightUtc(year + 1, 1, 1, timeZone) : localMidnightUtc(year, first + 3, 1, timeZone);
+  return { start, end, label: `Q${quarter} ${year}` };
+}
+
+/** The last full month and quarter before `now`, in `timeZone`. */
+export function previousPeriods(timeZone: string, now = new Date()) {
+  const parts = new Intl.DateTimeFormat("en-US", { timeZone, year: "numeric", month: "numeric", day: "numeric" }).formatToParts(now);
+  const get = (t: string) => Number(parts.find((p) => p.type === t)?.value);
+  const year = get("year");
+  const month = get("month");
+  const quarter = Math.ceil(month / 3);
+  return {
+    day: get("day"),
+    /** 1-3: which month of the current quarter today is in. */
+    monthOfQuarter: month - (quarter - 1) * 3,
+    month: month === 1 ? { year: year - 1, month: 12 } : { year, month: month - 1 },
+    quarter: quarter === 1 ? { year: year - 1, quarter: 4 } : { year, quarter: quarter - 1 },
+  };
+}
+
 /** Inclusive date range given as YYYY-MM-DD strings. */
 export function customPeriod(from: string, to: string, timeZone: string): Period {
   const [fy, fm, fd] = parseDate(from);

@@ -48,10 +48,14 @@ with one ordinary report per account, so the worker is unchanged. The group's
 CSV merges every account's rows by date with an Account column, and totals
 cover all of them.
 
+**Quarters.** A quarterly report is stored as a `custom` period labeled
+"Q3 2026" (calendar quarters, each account's timezone).
+
 **Schedules.** A row in `report_schedules` names one or more accounts, a state and a day
 of the month. Every 15 minutes `pg_cron` runs `enqueue_due_schedules()`, which
-queues a report for the previous full month (in the account's timezone) once
-the day arrives, at most once per month per schedule. The worker then runs it
+queues a report for the previous full month, or for quarterly schedules the
+previous quarter (in Jan, Apr, Jul and Oct), once the day arrives, at most once
+per period per schedule. The worker then runs it
 like any other report.
 
 **Oklahoma import file.** State filings → Oklahoma turns any finished Oklahoma

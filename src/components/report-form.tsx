@@ -16,15 +16,24 @@ function previousMonth() {
   return { month: d.getMonth() + 1, year: d.getFullYear() };
 }
 
+function previousQuarter() {
+  const d = new Date();
+  const q = Math.floor(d.getMonth() / 3) + 1;
+  return q === 1 ? { quarter: 4, year: d.getFullYear() - 1 } : { quarter: q - 1, year: d.getFullYear() };
+}
+
+const QUARTERS = ["Q1 (Jan – Mar)", "Q2 (Apr – Jun)", "Q3 (Jul – Sep)", "Q4 (Oct – Dec)"];
+
 export function ReportForm({ accounts }: { accounts: AccountOption[] }) {
   const [state, action] = useActionState(requestReport, null);
   const prev = previousMonth();
+  const prevQ = previousQuarter();
   const thisYear = new Date().getFullYear();
   const years = Array.from({ length: 8 }, (_, i) => thisYear - i);
 
   const [accountIds, setAccountIds] = useState<string[]>(accounts[0] ? [accounts[0].id] : []);
   const [usState, setUsState] = useState("OK");
-  const [periodType, setPeriodType] = useState<"month" | "custom">("month");
+  const [periodType, setPeriodType] = useState<"month" | "quarter" | "custom">("month");
 
   // Remember the last account and state on this device.
   useEffect(() => {
@@ -70,14 +79,14 @@ export function ReportForm({ accounts }: { accounts: AccountOption[] }) {
         <div>
           <span className="label">Period</span>
           <div className="inline-flex rounded-lg border border-slate-300 p-0.5 text-sm">
-            {(["month", "custom"] as const).map((t) => (
+            {(["month", "quarter", "custom"] as const).map((t) => (
               <button
                 key={t}
                 type="button"
                 onClick={() => setPeriodType(t)}
                 className={`rounded-md px-3 py-1.5 ${periodType === t ? "bg-blue-600 text-white" : "text-slate-700 hover:bg-slate-50"}`}
               >
-                {t === "month" ? "Month" : "Date range"}
+                {{ month: "Month", quarter: "Quarter", custom: "Date range" }[t]}
               </button>
             ))}
           </div>
@@ -96,6 +105,25 @@ export function ReportForm({ accounts }: { accounts: AccountOption[] }) {
             <div>
               <label className="label" htmlFor="year">Year</label>
               <select id="year" name="year" className="input" defaultValue={prev.year}>
+                {years.map((y) => (
+                  <option key={y} value={y}>{y}</option>
+                ))}
+              </select>
+            </div>
+          </div>
+        ) : periodType === "quarter" ? (
+          <div className="grid gap-5 md:grid-cols-2">
+            <div>
+              <label className="label" htmlFor="quarter">Quarter</label>
+              <select id="quarter" name="quarter" className="input" defaultValue={prevQ.quarter}>
+                {QUARTERS.map((q, i) => (
+                  <option key={q} value={i + 1}>{q}</option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="label" htmlFor="year">Year</label>
+              <select id="year" name="year" className="input" defaultValue={prevQ.year}>
                 {years.map((y) => (
                   <option key={y} value={y}>{y}</option>
                 ))}

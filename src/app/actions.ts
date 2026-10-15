@@ -9,7 +9,7 @@ import { getCurrentUser, needsSetup, requireSuperAdmin, requireUser } from "@/li
 import { encryptSecret, keyHint } from "@/lib/crypto";
 import { verifyKey } from "@/lib/stripe";
 import { env } from "@/lib/env";
-import { customPeriod, monthPeriod } from "@/lib/period";
+import { customPeriod, monthPeriod, previousPeriods, quarterPeriod } from "@/lib/period";
 import { ALL_STATES, US_STATES } from "@/lib/states";
 import { triggerWorker } from "@/lib/worker-trigger";
 
@@ -242,6 +242,7 @@ async function liveAccounts(accountIds: string[]) {
 
 type ReportPeriodInput =
   | { type: "month"; year: number; month: number }
+  | { type: "quarter"; year: number; quarter: number }
   | { type: "custom"; from: string; to: string };
 
 /**
@@ -262,11 +263,14 @@ async function queueReports(opts: {
       const p =
         opts.period.type === "month"
           ? monthPeriod(opts.period.year, opts.period.month, a.timezone)
-          : customPeriod(opts.period.from, opts.period.to, a.timezone);
+          : opts.period.type === "quarter"
+            ? quarterPeriod(opts.period.year, opts.period.quarter, a.timezone)
+            : customPeriod(opts.period.from, opts.period.to, a.timezone);
       return {
         stripe_account_id: a.id,
         state: opts.state,
-        period_type: opts.period.type,
+        // The column allows month|custom; a quarter is stored as a custom range labeled "Q3 2026".
+        period_type: opts.period.type === "month" ? "month" : "custom",
         period_start: p.start.toISOString(),
         period_end: p.end.toISOString(),
         period_label: p.label,
@@ -314,10 +318,13 @@ export async function requestReport(_: ActionResult | null, fd: FormData): Promi
   const accounts = await liveAccounts(ids(fd, "stripe_account_id"));
   if (accounts.length === 0) return { ok: false, error: "Pick at least one Stripe account." };
 
+  const periodType = str(fd, "period_type");
   const period: ReportPeriodInput =
-    str(fd, "period_type") === "custom"
+    periodType === "custom"
       ? { type: "custom", from: str(fd, "from"), to: str(fd, "to") }
-      : { type: "month", year: Number(str(fd, "year")), month: Number(str(fd, "month")) };
+      : periodType === "quarter"
+        ? { type: "quarter", year: Number(str(fd, "year")), quarter: Number(str(fd, "quarter")) }
+        : { type: "month", year: Number(str(fd, "year")), month: Number(str(fd, "month")) };
 
   const result = await queueReports({ accounts, state, period, createdBy: me.id });
   if ("error" in result) return { ok: false, error: result.error };
@@ -393,19 +400,11 @@ export async function rerunReportGroup(groupId: string): Promise<ActionResult> {
 
 // Schedules ----------------------------------------------------------------------
 
-/** Day of month and previous full month, in the account's timezone. */
-function localToday(timeZone: string) {
-  const parts = new Intl.DateTimeFormat("en-US", { timeZone, year: "numeric", month: "numeric", day: "numeric" }).formatToParts(new Date());
-  const get = (t: string) => Number(parts.find((p) => p.type === t)?.value);
-  const year = get("year");
-  const month = get("month");
-  return { day: get("day"), prevYear: month === 1 ? year - 1 : year, prevMonth: month === 1 ? 12 : month - 1 };
-}
-
 export async function createSchedule(_: ActionResult | null, fd: FormData): Promise<ActionResult> {
   const me = await requireUser();
   const state = str(fd, "state");
   const day = Number(str(fd, "day_of_month") || "1");
+  const quarterly = str(fd, "frequency") === "quarterly";
   const runNow = fd.get("run_now") === "on";
 
   if (state !== ALL_STATES && !US_STATES.some((s) => s.code === state)) return { ok: false, error: "Pick a state." };
@@ -415,11 +414,16 @@ export async function createSchedule(_: ActionResult | null, fd: FormData): Prom
   if (accounts.length === 0) return { ok: false, error: "Pick at least one Stripe account." };
 
   // The first account's timezone decides when the schedule is due (matches enqueue_due_schedules).
-  const today = localToday(accounts[0].timezone);
-  const last = monthPeriod(today.prevYear, today.prevMonth, accounts[0].timezone);
-  // If this month's run day has already passed, last month counts as handled
-  // unless the user asked to run it now.
-  const alreadyDue = today.day >= day;
+  const tz = accounts[0].timezone;
+  const today = previousPeriods(tz);
+  const period: ReportPeriodInput = quarterly
+    ? { type: "quarter", ...today.quarter }
+    : { type: "month", ...today.month };
+  const last = quarterly ? quarterPeriod(today.quarter.year, today.quarter.quarter, tz) : monthPeriod(today.month.year, today.month.month, tz);
+  // If the run day for the last period has already passed, that period counts
+  // as handled unless the user asked to run it now. Quarterly schedules run in
+  // the first month after the quarter ends.
+  const alreadyDue = quarterly ? today.monthOfQuarter > 1 || today.day >= day : today.day >= day;
 
   const db = createAdminClient();
   const { data: schedule, error } = await db
@@ -428,6 +432,7 @@ export async function createSchedule(_: ActionResult | null, fd: FormData): Prom
       stripe_account_ids: accounts.map((a) => a.id),
       state,
       day_of_month: day,
+      frequency: quarterly ? "quarterly" : "monthly",
       last_period_start: alreadyDue || runNow ? last.start.toISOString() : null,
       last_run_at: runNow ? new Date().toISOString() : null,
       created_by: me.id,
@@ -437,13 +442,7 @@ export async function createSchedule(_: ActionResult | null, fd: FormData): Prom
   if (error) return { ok: false, error: error.message };
 
   if (runNow) {
-    const result = await queueReports({
-      accounts,
-      state,
-      period: { type: "month", year: today.prevYear, month: today.prevMonth },
-      createdBy: me.id,
-      scheduleId: schedule.id,
-    });
+    const result = await queueReports({ accounts, state, period, createdBy: me.id, scheduleId: schedule.id });
     if ("error" in result) return { ok: false, error: result.error };
   }
 
