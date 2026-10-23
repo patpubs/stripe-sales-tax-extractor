@@ -10,6 +10,9 @@ export const maxDuration = 300;
 // Leave headroom under maxDuration for the final save and the re-trigger.
 const BUDGET_MS = 240_000;
 
+// Once per cold start, so runtime logs show which Node.js patch Vercel serves.
+console.log(`worker runtime: node ${process.versions.node}`);
+
 function authorized(req: NextRequest): boolean {
   const header = req.headers.get("authorization") ?? "";
   const expected = `Bearer ${env.cronSecret}`;
